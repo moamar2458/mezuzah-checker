@@ -91,6 +91,14 @@ export const HE_APP = {
   'Delete all unsure letters': 'מחק את כל האותיות לבדיקה',
   'Restore original': 'שחזר מקור',
   '✓ I checked this text': '✓ בדקתי את הנוסח',
+  'Open big and mark places': 'פתח בגדול וסמן מקומות',
+  'Tap the letter picture to see it big and mark places on it.': 'לחץ על תמונת האות כדי לראות אותה גדולה ולסמן בה מקומות.',
+  'Close': 'סגור',
+  '⚠ Problem': '⚠ בעיה',
+  '✓ Good': '✓ תקין',
+  'Tap a place on the letter, or draw a small circle around it. The whole letter can be right and a place can still be a problem.': 'לחץ על מקום באות, או צייר סביבו עיגול קטן. האות כולה יכולה להיות נכונה ועדיין מקום בה יכול להיות בעיה.',
+  'The marks are saved with the letter when you confirm it. In later checks the app circles similar places with your note. It only points to places to check – the sofer decides.': 'הסימונים נשמרים עם האות כשמאשרים אותה. בבדיקות הבאות האפליקציה מקיפה בעיגול מקומות דומים עם ההערה שלך. היא רק מראה מקומות לבדיקה – הסופר מחליט.',
+  'Marked places': 'מקומות שסימנת',
 };
 
 export const HE_PC = {
@@ -121,4 +129,22 @@ export const HE_PC = {
   'The AI': 'הבינה',
   'Train the AI now': 'אמן את הבינה עכשיו',
   'This program never decides whether a mezuzah is kosher. It only points to places for the sofer to check.': 'התוכנה לעולם אינה פוסקת אם המזוזה כשרה. היא רק מראה לסופר מקומות לבדוק.',
+};
+
+export const HE_TRAIN = {
+  'Train the Letter AI': 'אימון בינת האותיות',
+  'Train the letter AI': 'אימון בינת האותיות',
+  'Everything runs inside this browser. Nothing is uploaded. On a Windows PC: open this page in Chrome or Edge.': 'הכול רץ בתוך הדפדפן הזה. שום דבר לא נשלח החוצה. במחשב: פתח את הדף בכרום או באדג׳.',
+  '1. Letters from real mezuzot': '1. אותיות ממזוזות אמיתיות',
+  'Add library file(s)…': 'הוסף קובצי ספרייה…',
+  'Use the library on this device': 'השתמש בספרייה שבמכשיר הזה',
+  'No real letters added yet.': 'עדיין לא נוספו אותיות אמיתיות.',
+  '2. Settings': '2. הגדרות',
+  'Font letters per letter shape:': 'אותיות גופן לכל צורת אות:',
+  'Training rounds (epochs):': 'סבבי אימון:',
+  'Continue from an existing model (optional)…': 'המשך ממודל קיים (לא חובה)…',
+  '3. Train': '3. אימון',
+  '▶ Start training': '▶ התחל אימון',
+  '⬇ Download model file': '⬇ הורד את קובץ המודל',
+  'Use this model on this device': 'השתמש במודל הזה במכשיר הזה',
 };

@@ -155,16 +155,31 @@
     <p class="small">Letters the app was not sure about. Tap a letter, then tell the app what it is. Nothing is learned from these until you confirm.</p>
     <div id="reviewGrid" class="review-grid"></div>
     <div id="reviewPanel" class="review-panel" hidden>
-      <div class="review-head"><canvas id="reviewBig" width="144" height="144"></canvas>
+      <div class="review-head"><button id="reviewZoom" class="zoom-thumb" type="button" aria-label="Open big and mark places"><canvas id="reviewBig" width="144" height="144"></canvas><span class="zoom-ico">🔍</span><span id="reviewMarkN" class="badge" hidden></span></button>
         <div><div>App thinks: <b id="reviewGuess"></b></div>
           <button class="primary" id="reviewYes">✓ Yes, it is <span id="reviewYesL"></span></button>
           <button id="reviewNot">✗ Not a letter / bad cut</button>
         </div>
       </div>
+      <div class="small">Tap the letter picture to see it big and mark places on it.</div>
       <div class="small">Or choose the right letter:</div>
       <div id="letterKeys" class="letter-keys"></div>
     </div>
     <div class="row"><button id="reviewMore">Show more</button></div>
+    <div id="zoomBox" class="zoom-box" hidden>
+      <div class="zoom-card">
+        <div class="zoom-top"><b id="zoomTitle"></b><button id="zoomClose" class="icon-btn" type="button" aria-label="Close">✕</button></div>
+        <canvas id="zoomCanvas" width="480" height="480"></canvas>
+        <div class="row zoom-kind">
+          <button id="zkProblem" type="button" class="sel">⚠ Problem</button>
+          <button id="zkGood" type="button">✓ Good</button>
+        </div>
+        <p class="small">Tap a place on the letter, or draw a small circle around it. The whole letter can be right and a place can still be a problem.</p>
+        <div id="zoomList" class="zoom-list"></div>
+        <p class="small">The marks are saved with the letter when you confirm it. In later checks the app circles similar places with your note. It only points to places to check – the sofer decides.</p>
+        <div class="row"><button id="zoomDone" class="primary" type="button">Done</button></div>
+      </div>
+    </div>
   </section>
 
   <!-- LIBRARY -->
@@ -179,6 +194,9 @@
       <button id="removeModel">Remove model</button>
       <a class="button" href="train.html">🏋 Train here</a>
     </div>
+    <h2>Marked places</h2>
+    <div id="spotInfo" class="small"></div>
+    <div id="spotList" class="spot-list"></div>
     <h2>Business details (for certificates)</h2>
     <label class="field">Business name <input id="bizName" autocomplete="organization"></label>
     <label class="field">Sofer's name <input id="bizSofer" autocomplete="name"></label>

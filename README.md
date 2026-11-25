@@ -73,6 +73,20 @@ keeps its own library on the phone.
   the phone at its next sync – but only if it is at least 97% correct on real letters and not worse than the current one.
 - All checks can be opened on the PC screen with the same red circles and notes.
 
+## Teaching small details (marked places)
+In **Review unsure letters**, tap a letter, then tap its picture (🔍) to open it big.
+- Tap a place on the letter, or draw a small circle around it, and choose **⚠ Problem** or **✓ Good**; add a short note if you like.
+  The whole letter can be right and a place in it can still be a problem.
+- When you confirm the letter (*Yes, it is…* or the right letter), the marks are saved with it in the learning library,
+  and sent to the PC, which shares them with every phone and helper.
+- In every later check, the app looks at the same place on every letter of the same kind (a mark on an א is looked for
+  on every א). A place is circled, with your note, only when it looks like your marked problem **and** unlike the same
+  place on the other letters of that kind in the mezuzah. A place that looks more like one you marked *good* is not circled,
+  and the app's own marks that look like a *good* place say so.
+- Such letters are not added to the library automatically; they go to the review list again.
+- *Library & AI → Marked places* lists every mark; 🗑 forgets the marks of a letter (on the PC too).
+- It only points to places to check – it never decides kosher or not.
+
 ## Customers and reminders
 - **Check a mezuzah** first asks *who is it for*: type a name (pick an existing customer or add a new one), then
   pick which mezuzah (Front door, Kitchen…). *Check without a customer* skips this.
@@ -118,7 +132,7 @@ On the PC: *Library & AI → People sharing letters → Add helper*. Each helper
 ## Training the AI by hand (optional)
 The PC does this by itself. Without the PC program you can still:
 1. On the phone: *Library & AI → Export library* and send the file to the PC.
-2. On the PC open http://localhost:8080/train.html, add the library file(s), press **Start training**.
+2. On the PC open http://localhost:8080/train.html (in Hebrew or English, like the app), add the library file(s), press **Start training**.
 3. Download the model file, send it to the phone, and load it with *Library & AI → Load trained model*.
 
 **Safety rule:** the app uses the AI only after it has learned from at least 1,500 real letters and scored at
@@ -147,4 +161,5 @@ app/train.html        AI trainer           app/js/align.js     match letters to 
 app/js/reference.js   mezuzah text         app/js/problems.js  cracks, spots, touching
 app/js/pipeline.js    whole check          app/js/nn.js        the small AI
 app/js/library.js     learning library     app/js/camera.js    live camera helper
+app/js/spots.js       marked places        app/js/i18n.js      Hebrew / English
 ```

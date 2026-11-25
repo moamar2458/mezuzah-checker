@@ -7,6 +7,7 @@ import { predict } from './nn.js';
 import { LETTERS, LETTER_INDEX, LETTER_NAMES } from './reference.js';
 import { median } from './imageproc.js';
 import { T } from './i18n.js';
+import { ZOOM, viewSquare, findTaught, goodLike } from './spots.js';
 
 const name = (ch) => T(`${ch} (${LETTER_NAMES[ch]})`, ch);
 
@@ -62,7 +63,7 @@ export function photoQuality(seg) {
  * opts: { ref (parsed reference), model (optional), sens (crack sensitivity 0.2..0.5) }
  */
 export function analyze(rgba, w, h, opts) {
-  const { ref, sens = 0.15 } = opts;
+  const { ref, sens = 0.15, spots = null } = opts;
   const seg = segment(rgba, w, h);
   if (!seg.ok) {
     return { ok: false, rgba: seg.rgba, w, h, issues: [], quality: { warnings: [{ kind: 'notext', note: T('Could not find the letters. Make sure the whole klaf is in the photo, sharp and well lit.', 'לא נמצאו האותיות. ודא שכל הקלף בתמונה, חד ומואר היטב.') }] } };
@@ -158,6 +159,10 @@ export function analyze(rgba, w, h, opts) {
     }
   });
 
+  // the big view of each letter (for spots the sofer marked, and for the review list)
+  for (const g of letters) if (!(g.op === 'I' && g.tiny)) g.zoom = viewCrop(seg.gray, g, ZOOM);
+  const toView = (g, x, y) => { const q = viewSquare(g); return [(x - q.left) / q.side, (y - q.top) / q.side]; };
+
   // 3. look inside the letters for cracks, white spots, thin ink, touching legs
   let lowRes = 0, inspected = 0;
   for (const g of letters) {
@@ -166,7 +171,36 @@ export function analyze(rgba, w, h, opts) {
     const res = inspectLetter(seg, g, ch, sens);
     g.spots = res.spots;
     inspected++; if (res.strokeW < 6) lowRes++;
-    for (const sp of res.spots) add(sp.x, sp.y, H * 0.35, sp.note + (g.op === 'M' ? T(` (${ch}, word ${ref[g.ref].wordText})`, ` (${ch}, מילה ${ref[g.ref].wordText})`) : ''), sp.kind);
+    for (const sp of res.spots) {
+      let note = sp.note + (g.op === 'M' ? T(` (${ch}, word ${ref[g.ref].wordText})`, ` (${ch}, מילה ${ref[g.ref].wordText})`) : '');
+      if (spots && g.op === 'M') {
+        const [u, v] = toView(g, sp.x, sp.y);
+        const good = goodLike({ label: ch, zoom: g.zoom }, spots, u, v);
+        if (good) note += T(` · looks like a place you marked as good${good.note ? `: "${good.note}"` : ''}`, ` · דומה למקום שסימנת כתקין${good.note ? `: "${good.note}"` : ''}`);
+      }
+      add(sp.x, sp.y, H * 0.35, note, sp.kind);
+    }
+  }
+
+  // 3b. places that look like a problem the sofer marked before (on this letter or on another one)
+  let taughtCount = 0;
+  if (spots && spots.some((m) => m.kind === 'problem')) {
+    const ms = letters.filter((g) => g.op === 'M' && g.zoom);
+    const hits = findTaught(ms.map((g) => ({ label: ref[g.ref].ch, zoom: g.zoom })), spots);
+    for (const hit of hits) {
+      const g = ms[hit.li], r = ref[g.ref], q = viewSquare(g);
+      g.taught = true; taughtCount++;
+      const mk = hit.mark;
+      const where = T(`(${r.ch}, word ${r.wordText})`, `(${r.ch}, מילה ${r.wordText})`);
+      const note = mk.note
+        ? T(`Looks like a place you marked as a problem on ${mk.label}: "${mk.note}" ${where} - check`, `דומה למקום שסימנת כבעיה באות ${mk.label}: "${mk.note}" ${where} - לבדוק`)
+        : T(`Looks like a place you marked as a problem on ${mk.label} ${where} - check`, `דומה למקום שסימנת כבעיה באות ${mk.label} ${where} - לבדוק`);
+      const x = q.left + hit.u * q.side, y = q.top + hit.v * q.side;
+      // the app already circled this place: add the note to that circle instead of a second circle
+      const same = issues.find((is) => Math.hypot(is.x - x, is.y - y) < H * 0.4);
+      if (same) { same.note += T(` · looks like a place you marked as a problem${mk.note ? `: "${mk.note}"` : ''}`, ` · דומה למקום שסימנת כבעיה${mk.note ? `: "${mk.note}"` : ''}`); continue; }
+      issues.push({ x, y, r: Math.max(hit.r * q.side * 1.3, H * 0.3), note, kind: 'taught' });
+    }
   }
   if (lowRes > inspected * 0.5) quality.warnings.push({ kind: 'lowres', note: T('Some strokes are too thin in the photo to check for cracks. Move closer or take the klaf in two halves.', 'חלק מהקווים דקים מדי בתמונה לבדיקת סדקים. התקרב או צלם את הקלף בשני חצאים.') });
 
@@ -184,19 +218,19 @@ export function analyze(rgba, w, h, opts) {
   const samples = [];
   for (const g of letters) {
     const view = viewCrop(seg.gray, g);
-    const base = { x: toBytes(g.x), view, box: [g.x0, g.y0, g.x1, g.y1] };
+    const base = { x: toBytes(g.x), view, zoom: g.zoom, box: [g.x0, g.y0, g.x1, g.y1] };
     if (g.op === 'M') {
       const r = ref[g.ref];
       // Sure = its whole word lines up exactly with the text, the line is clean,
       // no problem was found in the letter, and the AI (if any) does not disagree.
-      let sure = wordOk.get(r.word) && !(g.spots && g.spots.length) && (lineEdits.get(g.line) || 0) <= 1 && steps[g.step].score > -2;
+      let sure = wordOk.get(r.word) && !(g.spots && g.spots.length) && !g.taught && (lineEdits.get(g.line) || 0) <= 1 && steps[g.step].score > -2;
       let modelP = null;
       if (g.probs) {
         modelP = g.probs[LETTER_INDEX[r.ch]];
         let top = 0; g.probs.forEach((p, c) => { if (p > g.probs[top]) top = c; });
         if (LETTERS[top] !== r.ch && modelP < 0.25) sure = false;
       }
-      samples.push({ ...base, label: r.ch, sure: !!sure, modelP, why: sure ? '' : 'not sure' });
+      samples.push({ ...base, ...(sure ? { zoom: null } : {}), label: r.ch, sure: !!sure, modelP, why: sure ? '' : 'not sure' });
     } else if (g.op === 'I' && !g.tiny) {
       let guess = null;
       if (g.probs) { let top = 0; g.probs.forEach((p, c) => { if (p > g.probs[top]) top = c; }); guess = LETTERS[top]; }
@@ -211,7 +245,7 @@ export function analyze(rgba, w, h, opts) {
       found: letters.length, expected: ref.length, matched, lines: seg.lines.length,
       missing: steps.filter((s) => s.op === 'D').length, extra: steps.filter((s) => s.op === 'I').length,
       touching: steps.filter((s) => s.op === 'T').length, broken: steps.filter((s) => s.op === 'B').length,
-      sure: samples.filter((s) => s.sure).length, usedModel: !!model,
+      sure: samples.filter((s) => s.sure).length, usedModel: !!model, taught: taughtCount,
     },
     boxes: letters.map((g) => ({ b: [g.x0, g.y0, g.x1, g.y1], op: g.op, ch: g.op === 'M' ? ref[g.ref].ch : null })),
     // one entry per letter of the text that was found on its own: used for before/after and the printed-copy check

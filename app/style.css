@@ -72,7 +72,7 @@ button.link { border: 0; background: none; text-decoration: underline; padding: 
 .review-panel { position: sticky; bottom: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; box-shadow: 0 -4px 16px rgba(0,0,0,.15); }
 .review-head { display: flex; gap: 12px; align-items: center; }
 .review-head > div { display: flex; flex-direction: column; gap: 6px; flex: 1; }
-#reviewBig { width: 96px; height: 96px; border-radius: 8px; background: #fff; image-rendering: pixelated; }
+#reviewBig { width: 96px; height: 96px; border-radius: 8px; background: #fff; }
 .letter-keys { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin-top: 6px; direction: rtl; }
 .letter-keys button { padding: 8px 0; font-size: 20px; }
 
@@ -123,3 +123,25 @@ header { padding-left: 96px; }
 [dir=rtl] #backBtn { transform: scaleX(-1); }
 .cmp-pair { direction: ltr; }
 [dir=rtl] .pick-list .sub, [dir=rtl] .issues { text-align: right; }
+
+/* review: big letter view with marked places */
+.zoom-thumb { position: relative; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; width: auto; min-height: 0; line-height: 0; flex: none; }
+.zoom-thumb .zoom-ico { position: absolute; right: 2px; bottom: 2px; font-size: 16px; line-height: 1; }
+.zoom-thumb .badge { position: absolute; left: -6px; top: -6px; line-height: 1.2; }
+.zoom-box { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.6); display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: max(10px, env(safe-area-inset-top)) 8px 16px; }
+.zoom-card { background: var(--card); border-radius: 12px; padding: 12px; width: 100%; max-width: 520px; }
+.zoom-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#zoomCanvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 8px; background: #fff; touch-action: none; cursor: crosshair; }
+.zoom-kind button { flex: 1; }
+.zoom-kind button.sel { outline: 3px solid var(--primary); }
+#zkProblem.sel { background: #ffe5e5; } #zkGood.sel { background: #e3f6e3; }
+.zoom-list > div, .spot-list .spot-mark { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.zoom-list .num { font-weight: 700; min-width: 1.6em; text-align: center; border-radius: 50%; color: #fff; }
+.zoom-list .num.problem { background: #d00000; } .zoom-list .num.good { background: #138a13; }
+.zoom-list input { flex: 1; min-width: 0; }
+.zoom-list select, .zoom-list button { width: auto; flex: none; min-height: 0; padding: 6px 10px; }
+.spot-list { display: grid; gap: 8px; }
+.spot-list .spot { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: var(--card); }
+.spot-list canvas { width: 72px; height: 72px; border-radius: 6px; background: #fff; flex: none; }
+.spot-list .spot > div { flex: 1; min-width: 0; }
+.spot-list .spot button { width: auto; flex: none; }

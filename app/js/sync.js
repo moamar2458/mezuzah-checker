@@ -40,6 +40,11 @@ export async function queueSamples(samples) {
   await db.add('outbox', { kind: 'samples', body: { items: samples.map((s) => ({ uid: s.uid, label: s.label, x: u8ToB64(s.x), view: u8ToB64(s.view), src: s.src, scan: s.scanUid, date: s.date })) } });
 }
 
+/** Places the sofer marked on a letter (an empty list removes them). */
+export async function queueMarks(rec) {
+  await db.add('outbox', { kind: 'marks', body: { uid: rec.uid, label: rec.label, zoom: rec.zoom ? u8ToB64(rec.zoom) : null, marks: rec.marks || [] } });
+}
+
 /** Customers / items that were added or changed. */
 export async function queueRecords(customers, items) {
   if (!customers.length && !items.length) return;
@@ -74,10 +79,10 @@ async function doSync() {
   const waiting = await db.count('outbox');
   if (!s.code) return { state: 'off', waiting };
   const base = (s.url || location.origin).replace(/\/+$/, '');
-  let role = 'owner';
+  let role = 'owner', spotsVer = null;
   try {
     const ping = await (await call(base, s, '/api/ping', { timeout: 6000 })).json();
-    role = ping.role || 'owner';
+    role = ping.role || 'owner'; spotsVer = ping.spots ?? null;
     if (role !== s.role) await saveSettings({ role, userName: ping.name || '' });
   } catch (e) {
     const r = { state: e.auth ? 'error' : 'offline', waiting, message: e.auth ? e.message : T('PC not reachable', 'המחשב לא זמין') };
@@ -94,16 +99,25 @@ async function doSync() {
           const clean = (items || []).map(({ uid, label, x, view, src, date }) => ({ uid, label, x, view, src, date }));
           if (clean.length) await call(base, s, '/api/samples', { method: 'POST', body: JSON.stringify({ items: clean, device: s.device }), timeout: 120000 });
         }
+        if (item.kind === 'marks') await call(base, s, '/api/marks', { method: 'POST', body: JSON.stringify({ ...item.body, device: s.device }), timeout: 60000 });
         await db.del('outbox', item.id);
         continue;
       }
-      const path = { scan: '/api/scans', samples: '/api/samples', records: '/api/records', result: `/api/scans/${item.body.uid}/result` }[item.kind];
+      const path = { scan: '/api/scans', samples: '/api/samples', records: '/api/records', marks: '/api/marks', result: `/api/scans/${item.body.uid}/result` }[item.kind];
       await call(base, s, path, { method: 'POST', body: JSON.stringify({ ...item.body, device: s.device }), timeout: 120000 });
       await db.del('outbox', item.id);
     }
     // 2. customers and items from the PC (other phones, or a new phone getting everything back)
     const changed = role === 'helper' ? 0 : await mergeRecords(await (await call(base, s, '/api/records')).json());
-    // 3. is there a newer AI on the PC?
+    // 3. places marked on letters (by you on other phones, or by helpers): the shared spot memory
+    let spotsChanged = false;
+    if (spotsVer !== null && spotsVer !== (await db.get('pcSpotsVer'))) {
+      const list = await (await call(base, s, '/api/spots', { timeout: 60000 })).json();
+      await db.set('pcSpots', Object.fromEntries(list.map((r) => [r.uid, r])));
+      await db.set('pcSpotsVer', spotsVer);
+      spotsChanged = true;
+    }
+    // 4. is there a newer AI on the PC?
     let newModel = null;
     const meta = await (await call(base, s, '/api/model/meta')).json();
     if (meta.version && meta.version !== (await db.get('modelVersion'))) {
@@ -111,7 +125,7 @@ async function doSync() {
       await db.set('model', text); await db.set('modelVersion', meta.version);
       newModel = text;
     }
-    const r = { state: 'ok', waiting: await db.count('outbox'), newModel: !!newModel, recordsChanged: changed };
+    const r = { state: 'ok', waiting: await db.count('outbox'), newModel: !!newModel, recordsChanged: changed, spotsChanged };
     await db.set('syncStatus', { ...r, at: Date.now() });
     await db.set('lastSync', Date.now());
     return { ...r, modelJson: newModel };

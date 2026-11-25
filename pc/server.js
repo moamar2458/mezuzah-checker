@@ -107,6 +107,30 @@ async function addSamples(items, device, scan, user = config.users[0]) {
   return added;
 }
 
+// ---------- spot memory: places marked on letters as good / problem (shared with every phone and helper) ----------
+const marksFile = path.join(DATA, 'marks.json');
+const marks = fs.existsSync(marksFile) ? JSON.parse(fs.readFileSync(marksFile, 'utf8')) : {};
+let spotsVer = Object.keys(marks).length ? Math.max(...Object.values(marks).map((r) => r.date || 0)) : 0;
+function setMarks(b, user, device) {
+  const uid = String(b.uid || '').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 64);
+  if (!uid || !(b.label in LETTER_INDEX)) return { error: 'bad letter' };
+  const mine = marks[uid];
+  if (mine && mine.user !== user.id && user.role !== 'owner') return { error: 'not yours' };
+  const list = (Array.isArray(b.marks) ? b.marks : []).slice(0, 30).map((m) => ({
+    u: Math.min(1, Math.max(0, Number(m.u) || 0)), v: Math.min(1, Math.max(0, Number(m.v) || 0)), r: Math.min(0.4, Math.max(0.02, Number(m.r) || 0.08)),
+    kind: m.kind === 'good' ? 'good' : 'problem', note: String(m.note || '').slice(0, 200),
+  }));
+  if (!list.length) { if (!mine) return { ok: true }; delete marks[uid]; }
+  else {
+    const zoom = typeof b.zoom === 'string' ? Buffer.from(b.zoom, 'base64') : null;
+    if (!zoom || (zoom.length !== 96 * 96 && zoom.length !== 48 * 48)) return { error: 'bad picture' };
+    marks[uid] = { uid, label: b.label, zoom: zoom.toString('base64'), marks: list, user: mine ? mine.user : user.id, device, date: Date.now() };
+  }
+  spotsVer = Date.now();
+  fs.writeFileSync(marksFile, JSON.stringify(marks));
+  return { ok: true };
+}
+
 // ---------- printed-copy check against every check on this PC ----------
 const REF = parseReference();
 let printIndex = null; // [{uid, itemUid, date, customerName, itemName, letters}]
@@ -192,7 +216,9 @@ async function api(req, res, p) {
   const user = config.users.find((u) => u.code === String(req.headers['x-pair-code'] || '').toUpperCase());
   if (!user) return send(res, 401, { error: 'Wrong or missing pairing code' });
   const m = req.method;
-  if (p === '/api/ping') return send(res, 200, { ok: true, server: 'mezuzah-pc', letters: library.length, model: state.currentModel, role: user.role, name: user.name });
+  if (p === '/api/ping') return send(res, 200, { ok: true, server: 'mezuzah-pc', letters: library.length, model: state.currentModel, role: user.role, name: user.name, spots: spotsVer });
+  if (p === '/api/marks' && m === 'POST') { const b = await readBody(req, 2e6); const r = setMarks(b, user, safeId(b.device)); return send(res, r.error ? 400 : 200, r); }
+  if (p === '/api/spots' && m === 'GET') return send(res, 200, Object.values(marks).map(({ uid, label, zoom, marks: mk }) => ({ uid, label, zoom, marks: mk })));
 
   // helpers share letters and get the AI back – nothing else (no photos, customers or results)
   if (user.role === 'helper') {
@@ -320,7 +346,7 @@ async function api(req, res, p) {
   if (p === '/api/library/stats') {
     const counts = Object.fromEntries(LETTERS.map((l) => [l, 0]));
     for (const s of library) counts[s.label]++;
-    return send(res, 200, { total: library.length, counts, sinceTrain: library.length - (state.lettersAtLastTrain || 0), autoMin: AUTO_MIN, autoEvery: AUTO_EVERY });
+    return send(res, 200, { spots: Object.keys(marks).length, total: library.length, counts, sinceTrain: library.length - (state.lettersAtLastTrain || 0), autoMin: AUTO_MIN, autoEvery: AUTO_EVERY });
   }
   if (p === '/api/model/meta') {
     const meta = currentModelMeta();

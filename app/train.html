@@ -8,12 +8,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><a href="index.html" class="icon-btn" style="text-decoration:none;color:inherit">‹</a><h1>Train the letter AI</h1></header>
+<header><a href="index.html" id="backBtn" class="icon-btn" style="text-decoration:none;color:inherit">‹</a><h1>Train the letter AI</h1></header>
 <main>
-  <p>The AI learns the 27 shapes of ktav ashuri (22 letters + ך ם ן ף ץ). It learns from:</p>
+  <p data-he="הבינה לומדת את 27 הצורות של כתב אשורי (22 אותיות + ך ם ן ף ץ). היא לומדת מ:">The AI learns the 27 shapes of ktav ashuri (22 letters + ך ם ן ף ץ). It learns from:</p>
   <ol>
-    <li><b>Your library</b> — letters from real mezuzot (exported from the phone with “Export library”).</li>
-    <li><b>Font letters</b> — letters drawn from two free STaM fonts, so the AI has a start even before you have many mezuzot.</li>
+    <li data-he="<b>הספרייה שלך</b> — אותיות ממזוזות אמיתיות (מיוצאות מהטלפון בכפתור &quot;ייצוא הספרייה&quot;)."><b>Your library</b> — letters from real mezuzot (exported from the phone with “Export library”).</li>
+    <li data-he="<b>אותיות גופן</b> — אותיות שמצוירות משני גופני סת&quot;ם חינמיים, כדי שלבינה תהיה התחלה עוד לפני שיש לך הרבה מזוזות."><b>Font letters</b> — letters drawn from two free STaM fonts, so the AI has a start even before you have many mezuzot.</li>
   </ol>
   <p class="small">Everything runs inside this browser. Nothing is uploaded. On a Windows PC: open this page in Chrome or Edge.</p>
 
@@ -38,7 +38,7 @@
       <button id="saveModel" class="primary">⬇ Download model file</button>
       <button id="installModel">Use this model on this device</button>
     </div>
-    <p class="small">Send the model file to the phone (WhatsApp/e-mail/USB/Google Drive…), then in the app: Library &amp; AI → Load trained model.</p>
+    <p class="small" data-he="שלח את קובץ המודל לטלפון (וואטסאפ/מייל/USB/גוגל דרייב…), ואז באפליקציה: ספרייה ובינה ← טען מודל מאומן.">Send the model file to the phone (WhatsApp/e-mail/USB/Google Drive…), then in the app: Library &amp; AI → Load trained model.</p>
   </div>
 </main>
 <script type="module" src="js/train-app.js"></script>

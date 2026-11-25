@@ -2,7 +2,8 @@
 import * as db from './db.js';
 import { Camera } from './camera.js';
 import { MEZUZAH_TEXT, referenceStats, LETTERS, LETTER_NAMES } from './reference.js';
-import { addScanLetters, resolveReview, exportLibrary } from './library.js';
+import { addScanLetters, resolveReview, exportLibrary, saveSpot, getSpots, allSpotRecords } from './library.js';
+import { prepareMemory } from './spots.js';
 import { deserializeModel } from './nn.js';
 import { modelTrusted, MIN_REAL } from './pipeline.js';
 import { sortIssues, paintIssues, paintBoxes } from './report.js';
@@ -11,7 +12,7 @@ import * as C from './customers.js';
 import { compareScans } from './compare.js';
 import { printedCheck } from './fraud.js';
 import { VERDICTS, certificateHTML, CERT_CSS, printCertificate, checkSummaryText } from './certificate.js';
-import { queueResult } from './sync.js';
+import { queueResult, queueMarks } from './sync.js';
 import { parseReference } from './reference.js';
 import { b64ToU8 } from './library.js';
 import { T, dateStr, dateTimeStr, translatePage, getLang } from './i18n.js';
@@ -216,8 +217,17 @@ $('cAddItem').onclick = async () => {
 };
 
 // ---------- PC sync ----------
+// places the sofer marked on letters, ready for the checker (rebuilt when marks change)
+let spotMem = null;
+async function spotMemory() {
+  if (!spotMem) { try { spotMem = prepareMemory(await allSpotRecords()); } catch { spotMem = []; } }
+  return spotMem;
+}
+const spotsChanged = () => { spotMem = null; };
+
 async function runSync() {
   const r = await syncNow();
+  if (r.spotsChanged) spotsChanged();
   if (r.modelJson) state.modelJson = r.modelJson;
   if (r.recordsChanged && !$('home').hidden) refreshHome();
   showSyncStatus();
@@ -336,7 +346,7 @@ async function process(img) {
   const data = ctx.getImageData(0, 0, w, h).data;
   let res;
   try {
-    res = await runJob({ rgba: data.buffer, w, h, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang() }, [data.buffer]);
+    res = await runJob({ rgba: data.buffer, w, h, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang(), spots: await spotMemory() }, [data.buffer]);
   } catch (err) {
     alert(T('Something went wrong while checking:\n', 'משהו השתבש בבדיקה:\n') + err.message);
     show('home', false); return;
@@ -628,7 +638,7 @@ $('reviewMore').onclick = () => { reviewLimit += 120; openReview(); };
 function selectReview(it, cell) {
   reviewSel = { it, cell };
   for (const c of document.querySelectorAll('.review-grid .cell')) c.classList.toggle('sel', c === cell);
-  drawCrop($('reviewBig'), it.view);
+  showMarkCount();
   $('reviewGuess').textContent = it.guess ? (getLang() === 'he' ? it.guess : `${it.guess} (${LETTER_NAMES[it.guess]})`) : T('unknown', 'לא ידוע');
   $('reviewYesL').textContent = it.guess || '';
   $('reviewYes').hidden = !it.guess;
@@ -637,14 +647,101 @@ function selectReview(it, cell) {
 async function decide(label) {
   if (!reviewSel) return;
   const { it, cell } = reviewSel;
+  if (!label && it.marks && it.marks.length && !confirm(T('This letter has marked places. They are kept only when the letter is confirmed. Remove it anyway?', 'באות הזאת יש מקומות מסומנים. הם נשמרים רק כשמאשרים את האות. להסיר בכל זאת?'))) return;
   const sample = await resolveReview(it, label);
-  if (sample) { await queueSamples([sample]); clearTimeout(decide.t); decide.t = setTimeout(runSync, 5000); }
+  if (sample) {
+    await queueSamples([sample]);
+    if (sample.spot) { await queueMarks(sample.spot); spotsChanged(); }
+    clearTimeout(decide.t); decide.t = setTimeout(runSync, 5000);
+  }
   const next = cell.nextElementSibling;
   cell.remove();
   reviewItems = reviewItems.filter((x) => x !== it);
   const nextItem = next && reviewItems.find((x, i) => $('reviewGrid').children[i] === next);
   if (next && nextItem) selectReview(nextItem, next); else { $('reviewPanel').hidden = true; reviewSel = null; }
 }
+// ---------- big letter view: mark places as good / problem ----------
+let zoomKind = 'problem', zoomDrag = null;
+function showMarkCount() {
+  const n = (reviewSel && reviewSel.it.marks && reviewSel.it.marks.length) || 0;
+  $('reviewMarkN').textContent = n; $('reviewMarkN').hidden = !n;
+  if (reviewSel) { const c = $('reviewBig'); c.width = c.height = 192; paintMarks(c, reviewSel.it.zoom || reviewSel.it.view, reviewSel.it.marks || []); }
+}
+/** Draw a letter view big, with its marked places (numbered circles: red = problem, green = good). */
+function paintMarks(canvas, view, marks, extra = null) {
+  const n = Math.round(Math.sqrt(view.length));
+  const small = document.createElement('canvas'); drawCrop(small, view);
+  const W = canvas.width, ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(small, 0, 0, n, n, 0, 0, W, W);
+  const all = extra ? [...marks, extra] : marks;
+  ctx.font = `bold ${Math.round(W / 20)}px system-ui, sans-serif`;
+  all.forEach((m, k) => {
+    const col = m.kind === 'good' ? '#138a13' : '#d00000';
+    ctx.lineWidth = Math.max(2, W / 120); ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(m.u * W, m.v * W, m.r * W, 0, Math.PI * 2); ctx.stroke();
+    if (m === extra) return;
+    const tx = m.u * W + m.r * W * 0.75, ty = m.v * W - m.r * W * 0.75;
+    ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.strokeText(String(k + 1), tx, ty);
+    ctx.fillStyle = col; ctx.fillText(String(k + 1), tx, ty);
+  });
+}
+function openZoom() {
+  if (!reviewSel) return;
+  const it = reviewSel.it;
+  it.marks = it.marks || [];
+  $('zoomTitle').textContent = it.guess ? T(`Letter ${it.guess} – mark places`, `האות ${it.guess} – סימון מקומות`) : T('Mark places', 'סימון מקומות');
+  setZoomKind(zoomKind);
+  drawZoom(); $('zoomBox').hidden = false;
+}
+function drawZoom(extra = null) { const it = reviewSel.it; paintMarks($('zoomCanvas'), it.zoom || it.view, it.marks, extra); renderZoomList(); }
+function setZoomKind(k) { zoomKind = k; $('zkProblem').classList.toggle('sel', k === 'problem'); $('zkGood').classList.toggle('sel', k === 'good'); }
+async function saveReviewMarks() { const it = reviewSel.it; await db.put('review', it); showMarkCount(); }
+function renderZoomList() {
+  const it = reviewSel.it, box = $('zoomList'); box.innerHTML = '';
+  if (!it.marks.length) { box.innerHTML = `<div class="small">${T('No places marked yet.', 'עוד לא סומנו מקומות.')}</div>`; return; }
+  it.marks.forEach((m, k) => {
+    const row = document.createElement('div');
+    row.innerHTML = `<span class="num ${m.kind}">${k + 1}</span>
+      <select aria-label="${T('Kind', 'סוג')}"><option value="problem">⚠ ${T('Problem', 'בעיה')}</option><option value="good">✓ ${T('Good', 'תקין')}</option></select>
+      <input maxlength="120" placeholder="${T('Note (optional), e.g. crack in the roof', 'הערה (לא חובה), למשל סדק בגג')}">
+      <button type="button" aria-label="${T('Remove', 'הסר')}">🗑</button>`;
+    const [sel, inp, del] = [row.querySelector('select'), row.querySelector('input'), row.querySelector('button')];
+    sel.value = m.kind; inp.value = m.note || '';
+    sel.onchange = () => { m.kind = sel.value; saveReviewMarks(); drawZoom(); };
+    inp.oninput = () => { m.note = inp.value.trim(); saveReviewMarks(); };
+    del.onclick = () => { it.marks.splice(k, 1); saveReviewMarks(); drawZoom(); };
+    box.appendChild(row);
+  });
+}
+const zoomPos = (e) => { const r = $('zoomCanvas').getBoundingClientRect(); return { u: (e.clientX - r.left) / r.width, v: (e.clientY - r.top) / r.height }; };
+const clampR = (r) => Math.min(0.25, Math.max(0.04, r));
+$('zoomCanvas').addEventListener('pointerdown', (e) => {
+  e.preventDefault(); $('zoomCanvas').setPointerCapture(e.pointerId);
+  const p = zoomPos(e); zoomDrag = { u: p.u, v: p.v, r: 0.07, moved: false, kind: zoomKind };
+  drawZoom(zoomDrag);
+});
+$('zoomCanvas').addEventListener('pointermove', (e) => {
+  if (!zoomDrag) return;
+  const p = zoomPos(e); const d = Math.hypot(p.u - zoomDrag.u, p.v - zoomDrag.v);
+  if (d > 0.03) { zoomDrag.moved = true; zoomDrag.r = clampR(d); }
+  drawZoom(zoomDrag);
+});
+const endDrag = () => {
+  if (!zoomDrag) return;
+  const m = { u: Math.min(1, Math.max(0, zoomDrag.u)), v: Math.min(1, Math.max(0, zoomDrag.v)), r: zoomDrag.moved ? zoomDrag.r : 0.07, kind: zoomDrag.kind, note: '' };
+  zoomDrag = null;
+  reviewSel.it.marks.push(m); saveReviewMarks(); drawZoom();
+};
+$('zoomCanvas').addEventListener('pointerup', endDrag);
+$('zoomCanvas').addEventListener('pointercancel', () => { zoomDrag = null; drawZoom(); });
+$('reviewZoom').onclick = openZoom;
+$('zkProblem').onclick = () => setZoomKind('problem');
+$('zkGood').onclick = () => setZoomKind('good');
+const closeZoom = () => { document.activeElement && document.activeElement.blur && document.activeElement.blur(); $('zoomBox').hidden = true; };
+$('zoomClose').onclick = closeZoom; $('zoomDone').onclick = closeZoom;
+$('zoomBox').onclick = (e) => { if (e.target === $('zoomBox')) closeZoom(); };
+
 $('reviewYes').onclick = () => decide(reviewSel && reviewSel.it.guess);
 $('reviewNot').onclick = () => decide(null);
 for (const L of LETTERS) {
@@ -667,6 +764,7 @@ async function openLibrary() {
     } catch { /* ignore */ }
   }
   $('modelInfo').textContent = info;
+  showSpotList();
   $('sens').value = state.sens; $('sensLbl').textContent = state.sens;
   const ss = await getSettings();
   $('pairCode').value = ss.code; $('pcUrl').value = ss.url;
@@ -674,6 +772,32 @@ async function openLibrary() {
   $('bizName').value = biz.name || ''; $('bizSofer').value = biz.sofer || ''; $('bizPhone').value = biz.phone || ''; $('bizAddress').value = biz.address || ''; $('bizExtra').value = biz.extra || '';
   showSyncStatus();
 }
+async function showSpotList() {
+  const recs = await allSpotRecords();
+  const nP = recs.reduce((a, r) => a + r.marks.filter((m) => m.kind === 'problem').length, 0);
+  const nG = recs.reduce((a, r) => a + r.marks.filter((m) => m.kind === 'good').length, 0);
+  $('spotInfo').textContent = recs.length
+    ? T(`${nP} problem places and ${nG} good places on ${recs.length} letters. In every check, similar places on letters of the same kind are circled with your note.`, `${nP} מקומות בעיה ו־${nG} מקומות תקינים על ${recs.length} אותיות. בכל בדיקה, מקומות דומים באותיות מאותו סוג מסומנים בעיגול עם ההערה שלך.`)
+    : T('None yet. In "Review unsure letters", tap the letter picture to see it big and mark places as good or problem.', 'עדיין אין. ב"אותיות לבדיקה" לחץ על תמונת האות כדי לראות אותה גדולה ולסמן מקומות כתקינים או כבעיה.');
+  const list = $('spotList'); list.innerHTML = '';
+  for (const r of recs.sort((a, b) => (b.date || 0) - (a.date || 0))) {
+    const row = document.createElement('div'); row.className = 'spot';
+    const cv = document.createElement('canvas'); cv.width = 192; cv.height = 192; paintMarks(cv, r.zoom, r.marks);
+    const txt = document.createElement('div');
+    txt.innerHTML = `<b>${r.label}</b>${r.fromPC ? ` <span class="small">${T('(from the PC)', '(מהמחשב)')}</span>` : ''}<div class="small">${r.marks.map((m, k) => `${k + 1}. ${m.kind === 'good' ? T('✓ good', '✓ תקין') : T('⚠ problem', '⚠ בעיה')}${m.note ? ` – ${escapeHtml(m.note)}` : ''}`).join('<br>')}</div>`;
+    const del = document.createElement('button'); del.textContent = '🗑'; del.setAttribute('aria-label', T('Forget these marks', 'שכח את הסימונים האלה'));
+    del.onclick = async () => {
+      if (!confirm(T('Forget the marked places on this letter? (The letter stays in the library.)', 'לשכוח את המקומות שסומנו באות הזאת? (האות נשארת בספרייה.)'))) return;
+      const empty = { uid: r.uid, label: r.label, zoom: null, marks: [] };
+      const pc = (await db.get('pcSpots')) || {}; delete pc[r.uid]; await db.set('pcSpots', pc);
+      if (!r.fromPC) await saveSpot(empty);
+      await queueMarks(empty); spotsChanged(); runSync(); showSpotList();
+    };
+    row.append(cv, txt, del); list.appendChild(row);
+  }
+}
+const escapeHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 $('syncSave').onclick = async () => {
   await saveSettings({ code: $('pairCode').value.trim().toUpperCase(), url: $('pcUrl').value.trim() });
   $('syncInfo').textContent = T('Connecting…', 'מתחבר…');

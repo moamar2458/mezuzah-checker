@@ -169,7 +169,8 @@ let poll = null;
 async function loadLib() {
   loadUsers();
   const st = await (await api('/api/library/stats')).json();
-  $('libInfo').textContent = T(`${st.total} sure letters from real mezuzot. The AI trains by itself after ${st.autoMin} letters, and again every ${st.autoEvery} new letters (${st.sinceTrain} new since the last training).`, `${st.total} אותיות בטוחות ממזוזות אמיתיות. הבינה מתאמנת לבד אחרי ${st.autoMin} אותיות, ושוב כל ${st.autoEvery} אותיות חדשות (${st.sinceTrain} חדשות מאז האימון האחרון).`);
+  $('libInfo').textContent = T(`${st.total} sure letters from real mezuzot. The AI trains by itself after ${st.autoMin} letters, and again every ${st.autoEvery} new letters (${st.sinceTrain} new since the last training).`, `${st.total} אותיות בטוחות ממזוזות אמיתיות. הבינה מתאמנת לבד אחרי ${st.autoMin} אותיות, ושוב כל ${st.autoEvery} אותיות חדשות (${st.sinceTrain} חדשות מאז האימון האחרון).`)
+    + T(` Marked places (good / problem) on ${st.spots || 0} letters – shared with every phone.`, ` מקומות מסומנים (תקין / בעיה) על ${st.spots || 0} אותיות – משותפים לכל הטלפונים.`);
   $('libCounts').innerHTML = LETTERS.map((L) => `<div class="${st.counts[L] < 30 ? 'low' : ''}"><b>${L}</b>${st.counts[L]}</div>`).join('');
   const m = await (await api('/api/model/meta')).json();
   $('modelInfo').textContent = m.version
