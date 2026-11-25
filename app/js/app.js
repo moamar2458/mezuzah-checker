@@ -12,7 +12,7 @@ import * as C from './customers.js';
 import { compareScans } from './compare.js';
 import { printedCheck } from './fraud.js';
 import { VERDICTS, certificateHTML, CERT_CSS, printCertificate, checkSummaryText } from './certificate.js';
-import { queueResult, queueMarks } from './sync.js';
+import { queueResult, queueMarks, pcRequest } from './sync.js';
 import { parseReference } from './reference.js';
 import { b64ToU8 } from './library.js';
 import { T, dateStr, dateTimeStr, translatePage, getLang } from './i18n.js';
@@ -29,6 +29,9 @@ const TITLES = {
 
 let state = { mode: 'check', refText: MEZUZAH_TEXT, refConfirmed: false, modelJson: null, sens: 0.15, target: null };
 let camera = null;
+// opened on the PC itself (the PC program serves the app at http://localhost:8080/)
+const ON_PC = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const DESKTOP = typeof matchMedia !== 'undefined' && matchMedia('(pointer: fine)').matches;
 const stack = [];
 
 // ---------- navigation ----------
@@ -55,6 +58,12 @@ async function init() {
   state.refConfirmed = !!(await db.get('refConfirmed'));
   state.modelJson = (await db.get('model')) || null;
   state.sens = (await db.get('sens')) ?? 0.15;
+  if (ON_PC) {
+    // the PC screen and this app share the pairing code, so a check made on the PC goes straight into the PC program
+    const s = await getSettings();
+    let code = ''; try { code = localStorage.getItem('pairCode') || ''; } catch { /* private mode */ }
+    if (!s.code && code) await saveSettings({ code, url: '' });
+  }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   show('home', false);
@@ -270,6 +279,7 @@ async function refreshHome() {
   $('dueBanner').hidden = !due.length;
   $('dueBanner').textContent = due.length ? `🔔 ${T(`${due.length} mezuzah check${due.length > 1 ? 's are' : ' is'} due${over ? ` (${over} overdue)` : ' soon'}`, `${due.length} בדיקות מזוזה ${over ? `(${over} באיחור)` : 'בקרוב'}`)}: ${due.slice(0, 3).map((d) => d.customer.name).join(', ')}${due.length > 3 ? '…' : ''}` : '';
   $('dueBanner').onclick = () => show('customers');
+  $('pcLink').hidden = location.hostname === 'moamar2458.github.io';
   $('homeStatus').innerHTML = `${T(`Library: <b>${nSamples}</b> sure letters · <b>${nReview}</b> to review · <b>${nScans}</b> mezuzot checked`, `ספרייה: <b>${nSamples}</b> אותיות בטוחות · <b>${nReview}</b> לבדיקה · <b>${nScans}</b> מזוזות נבדקו`)}<br>${model}<br><span id="syncLine"></span>`;
   showSyncStatus();
 }
@@ -288,14 +298,40 @@ async function startCapture(mode, keepTarget = false) {
   state.mode = mode;
   show('camera');
   $('title').textContent = mode === 'learn' ? T('Learn: take a photo', 'למידה: צלם') : T('Check: take a photo', 'בדיקה: צלם');
-  $('noCam').hidden = true;
-  if (!Camera.supported()) { $('noCam').hidden = false; document.querySelector('.cam-wrap').hidden = true; document.querySelector('.cam-buttons').hidden = true; return; }
+  $('noCam').hidden = true; $('camPick').hidden = true;
+  const ss = await getSettings();
+  $('scanBtn').hidden = $('scanBtn2').hidden = !(ss.code && ss.scan);
+  const noCam = () => {
+    $('noCam').hidden = false; document.querySelector('.cam-wrap').hidden = true; document.querySelector('.cam-buttons').hidden = true;
+    if (DESKTOP) {
+      $('noCamMsg').textContent = T('No camera was found on this computer (or it was not allowed). You can scan with the scanner, or choose a saved photo or PDF – or drag the file here:', 'לא נמצאה מצלמה במחשב הזה (או שלא ניתנה הרשאה). אפשר לסרוק מהסורק, או לבחור תמונה או PDF שמורים – או לגרור את הקובץ לכאן:');
+      $('nativeCam').parentElement.hidden = true;
+    }
+  };
+  if (!Camera.supported()) { noCam(); return; }
   document.querySelector('.cam-wrap').hidden = false; document.querySelector('.cam-buttons').hidden = false;
   camera = new Camera($('video'), camStatus);
-  try { await camera.start(); } catch (err) {
-    $('noCam').hidden = false; document.querySelector('.cam-wrap').hidden = true; document.querySelector('.cam-buttons').hidden = true;
-  }
+  try { await camera.start(await db.get('camDevice')); fillCamPick(); } catch (err) { camera = null; noCam(); }
 }
+
+// a PC can have more than one camera (built-in and an external USB camera): let the sofer choose, and remember it
+async function fillCamPick() {
+  const list = await Camera.list();
+  const sel = $('camPick');
+  if (list.length < 2 || !camera) { sel.hidden = true; return; }
+  sel.innerHTML = '';
+  list.forEach((d, i) => { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = `📷 ${d.label || `${T('Camera', 'מצלמה')} ${i + 1}`}`; sel.appendChild(o); });
+  sel.value = camera.deviceId || list[0].deviceId;
+  sel.hidden = false;
+}
+$('camPick').onchange = async (e) => {
+  const id = e.target.value;
+  await db.set('camDevice', id);
+  if (!camera) return;
+  camera.stop();
+  camera = new Camera($('video'), camStatus);
+  try { await camera.start(id); } catch (err) { alert(T('This camera could not be opened: ', 'לא ניתן לפתוח את המצלמה הזו: ') + err.message); }
+};
 function stopCamera() { if (camera) { camera.stop(); camera = null; } }
 
 function camStatus(s) {
@@ -321,12 +357,112 @@ $('shootBtn').onclick = async () => {
 for (const id of ['pickFile', 'pickFile2', 'nativeCam']) {
   $(id).onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
-    if (!f) return;
-    stopCamera();
-    const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(f));
-    process(bmp);
+    if (f) openFile(f, id !== 'nativeCam');
   };
 }
+
+/** A saved photo, a scanned picture or a PDF (its first page; the PC program turns it into a picture). */
+async function openFile(f, crop = true) {
+  stopCamera();
+  let img;
+  try {
+    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+      const s = await getSettings();
+      if (!s.code || !s.pdf) { alert(T('PDF files are opened by the PC program. Connect to the PC (Library & AI → PC sync), or save the page as a JPG or PNG picture.', 'קבצי PDF נפתחים בעזרת תוכנת המחשב. התחבר למחשב (ספרייה ובינה ← סנכרון עם המחשב), או שמור את הדף כתמונת JPG או PNG.')); startCapture(state.mode, true); return; }
+      show('busy', false);
+      $('busyMsg').textContent = T('Opening the PDF (first page)…', 'פותח את קובץ ה-PDF (עמוד ראשון)…');
+      const res = await pcRequest('/api/pdf', { method: 'POST', body: f, headers: { 'Content-Type': 'application/pdf' }, timeout: 180000 });
+      img = await createImageBitmap(await res.blob());
+    } else {
+      img = await createImageBitmap(f, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(f));
+    }
+  } catch (err) {
+    alert(T('This file could not be opened. Use a JPG, PNG or PDF file.\n', 'לא ניתן לפתוח את הקובץ. השתמש בקובץ JPG, PNG או PDF.\n') + (err && err.message ? err.message : ''));
+    startCapture(state.mode, true); return;
+  }
+  process(crop ? cropToKlaf(img) : img);
+}
+
+/**
+ * A scan (or a saved scan) shows the whole scanner glass: cut away the white around the klaf,
+ * so the letters keep their full detail. Photos without a white border stay as they are.
+ */
+function cropToKlaf(img) {
+  const W = img.width, H = img.height, k = Math.min(1, 700 / Math.max(W, H));
+  const w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0, w, h);
+  const d = cx.getImageData(0, 0, w, h).data;
+  const g = new Uint8Array(w * h), hist = new Uint32Array(256);
+  for (let i = 0; i < w * h; i++) { const v = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) | 0; g[i] = v; hist[v]++; }
+  let acc = 0, white = 0;
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= w * h * 0.1) { white = v; break; } }
+  if (white < 170) return img; // no white glass / lid around it
+  const bx = Math.round(w * 0.015), by = Math.round(h * 0.015); // ignore the dark edge of the scanner glass
+  const rows = new Uint32Array(h), cols = new Uint32Array(w);
+  for (let y = by; y < h - by; y++) for (let x = bx; x < w - bx; x++) {
+    const i = y * w + x;
+    if (g[i] < white - 22 || d[i * 4] - d[i * 4 + 2] > 22) { rows[y]++; cols[x]++; } // darker than the lid, or the yellow of the klaf
+  }
+  const span = (arr, n, other) => { let a = -1, b = -1; for (let i = 0; i < n; i++) if (arr[i] > other * 0.04) { if (a < 0) a = i; b = i; } return [a, b]; };
+  const [y0, y1] = span(rows, h, w), [x0, x1] = span(cols, w, h);
+  if (y0 < 0 || x0 < 0) return img;
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  if (bw * bh > w * h * 0.85 || bw * bh < w * h * 0.02) return img;
+  const m = 0.03 * Math.max(bw, bh);
+  const X0 = Math.max(0, (x0 - m) / k), Y0 = Math.max(0, (y0 - m) / k), X1 = Math.min(W, (x1 + 1 + m) / k), Y1 = Math.min(H, (y1 + 1 + m) / k);
+  const out = document.createElement('canvas'); out.width = Math.round(X1 - X0); out.height = Math.round(Y1 - Y0);
+  out.getContext('2d').drawImage(img, X0, Y0, X1 - X0, Y1 - Y0, 0, 0, out.width, out.height);
+  return out;
+}
+
+// drag a saved photo / scan / PDF onto the camera screen (on the PC)
+const dragFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragover', (e) => { if (!dragFiles(e)) return; e.preventDefault(); if (!$('camera').hidden) document.body.classList.add('drop-on'); });
+document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('drop-on'); });
+document.addEventListener('drop', (e) => {
+  if (!dragFiles(e)) return;
+  e.preventDefault(); document.body.classList.remove('drop-on');
+  const f = e.dataTransfer.files[0];
+  if (f && !$('camera').hidden) openFile(f);
+});
+
+// ---------- the scanner connected to the PC ----------
+for (const id of ['scanBtn', 'scanBtn2']) $(id).onclick = () => openScanner();
+$('scanClose').onclick = () => { $('scanBox').hidden = true; };
+$('scanFind').onclick = () => findScanners(true);
+async function openScanner() {
+  $('scanBox').hidden = false;
+  $('scanDpi').value = String((await db.get('scanDpi')) || 600);
+  if (!$('scanDev').options.length) await findScanners();
+}
+async function findScanners() {
+  const sel = $('scanDev'); sel.innerHTML = ''; $('scanGo').disabled = true;
+  $('scanMsg').textContent = T('Looking for scanners…', 'מחפש סורקים…');
+  try {
+    const r = await (await pcRequest('/api/scanners', { timeout: 60000 })).json();
+    if (!r.ok) throw new Error(r.error === 'no-sane' ? T('The scanner program (SANE) is not installed on the PC.', 'תוכנת הסורק (SANE) אינה מותקנת במחשב.') : r.error);
+    if (!r.list.length) { $('scanMsg').textContent = T('No scanner was found. Check that it is on and connected (USB, or the same network), then press "Look for scanners again".', 'לא נמצא סורק. בדוק שהוא דלוק ומחובר (USB או אותה רשת), ולחץ "חפש סורקים שוב".'); return; }
+    const last = await db.get('scanDevice');
+    for (const d of r.list) { const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; sel.appendChild(o); }
+    if (last && r.list.some((d) => d.id === last)) sel.value = last;
+    $('scanGo').disabled = false; $('scanMsg').textContent = '';
+  } catch (e) { $('scanMsg').textContent = e.message; }
+}
+$('scanGo').onclick = async () => {
+  const device = $('scanDev').value, dpi = Number($('scanDpi').value);
+  await db.set('scanDevice', device); await db.set('scanDpi', dpi);
+  $('scanGo').disabled = true;
+  $('scanMsg').textContent = T('Scanning… (this can take a minute)', 'סורק… (זה יכול לקחת דקה)');
+  try {
+    const res = await pcRequest('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device, dpi }), timeout: 300000 });
+    const img = await createImageBitmap(await res.blob());
+    $('scanBox').hidden = true; $('scanMsg').textContent = '';
+    stopCamera();
+    process(cropToKlaf(img));
+  } catch (e) { $('scanMsg').textContent = T('Scanning failed: ', 'הסריקה נכשלה: ') + e.message; }
+  finally { $('scanGo').disabled = false; }
+};
 
 // ---------- running the check ----------
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
@@ -800,6 +936,7 @@ const escapeHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 
 $('syncSave').onclick = async () => {
   await saveSettings({ code: $('pairCode').value.trim().toUpperCase(), url: $('pcUrl').value.trim() });
+  if (ON_PC) { try { localStorage.setItem('pairCode', $('pairCode').value.trim().toUpperCase()); } catch { /* ignore */ } }
   $('syncInfo').textContent = T('Connecting…', 'מתחבר…');
   const r = await runSync();
   if (r.state === 'ok') $('syncInfo').textContent = `${T('Connected to the PC ✓', 'מחובר למחשב ✓')}${r.newModel ? T(' – new AI received', ' – התקבלה בינה חדשה') : ''}`;

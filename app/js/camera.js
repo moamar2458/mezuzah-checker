@@ -11,11 +11,22 @@ export class Camera {
 
   static supported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && window.isSecureContext; }
 
-  async start() {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } },
-    });
+  /** The cameras of this device (a PC can have a built-in one and an external USB camera). Names show after the first permission. */
+  static async list() {
+    try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch { return []; }
+  }
+
+  async start(deviceId = null) {
+    const size = { width: { ideal: 4096 }, height: { ideal: 3072 } };
+    const ask = (video) => navigator.mediaDevices.getUserMedia({ audio: false, video });
+    try {
+      this.stream = await ask(deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: { ideal: 'environment' }, ...size });
+    } catch (e) {
+      if (!deviceId || e.name === 'NotAllowedError') throw e;
+      this.stream = await ask({ facingMode: { ideal: 'environment' }, ...size }); // the chosen camera was unplugged
+    }
+    const tr = this.stream.getVideoTracks()[0];
+    this.deviceId = (tr && tr.getSettings && tr.getSettings().deviceId) || deviceId;
     this.video.srcObject = this.stream;
     await this.video.play();
     // iPhone asks permission for the tilt sensor

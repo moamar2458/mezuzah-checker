@@ -14,6 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
+import { execFile } from 'node:child_process';
 import { LETTERS, LETTER_INDEX } from '../app/js/reference.js';
 import { modelTrusted, MIN_REAL } from '../app/js/pipeline.js';
 import { printedCheck } from '../app/js/fraud.js';
@@ -148,6 +149,51 @@ async function loadPrintIndex() {
 }
 
 // ---------- AI training ----------
+// ---------- scanner (SANE: scanimage) and PDF files (pdftoppm) on this PC ----------
+const run = (cmd, args, opts = {}) => new Promise((resolve, reject) => {
+  execFile(cmd, args, { encoding: 'buffer', maxBuffer: 400e6, timeout: opts.timeout || 240000 }, (err, out, errOut) => {
+    if (err) reject(Object.assign(err, { text: String(errOut || err.message).trim().split('\n').slice(-2).join(' ') })); else resolve(out);
+  });
+});
+const tools = { scan: false, pdf: false };
+run('scanimage', ['--version'], { timeout: 8000 }).then(() => { tools.scan = true; }).catch(() => {});
+run('pdftoppm', ['-v'], { timeout: 8000 }).then(() => { tools.pdf = true; }).catch((e) => { if (e.code !== 'ENOENT') tools.pdf = true; });
+let scannerCache = null; // { at, list }
+async function listScanners() {
+  if (scannerCache && Date.now() - scannerCache.at < 30000) return scannerCache.list;
+  const out = String(await run('scanimage', ['-f', '%d|%v %m%n', '-L'], { timeout: 40000 }));
+  const list = out.split('\n').map((l) => l.trim()).filter((l) => l.includes('|')).map((l) => { const [id, ...n] = l.split('|'); return { id, name: n.join('|').trim() || id }; });
+  scannerCache = { at: Date.now(), list };
+  return list;
+}
+let scanning = false;
+async function scanPage(device, dpi) {
+  if (scanning) throw new Error('The scanner is busy');
+  scanning = true;
+  try {
+    const base = ['--format=png', `--resolution=${dpi}`];
+    if (device) base.unshift('-d', device);
+    try { return await run('scanimage', [...base, '--mode', 'Gray']); }
+    catch (e) { if (e.killed) throw e; return await run('scanimage', base); } // this scanner has no "Gray" mode
+  } finally { scanning = false; }
+}
+function readRaw(req, limit = 80e6) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', (c) => { size += c.length; if (size > limit) { reject(new Error('too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+async function pdfPage(buf) {
+  const dir = await fsp.mkdtemp(path.join(DATA, 'tmp-'));
+  try {
+    await fsp.writeFile(path.join(dir, 'in.pdf'), buf);
+    await run('pdftoppm', ['-png', '-scale-to', '5000', '-f', '1', '-l', '1', '-singlefile', path.join(dir, 'in.pdf'), path.join(dir, 'out')], { timeout: 120000 });
+    return await fsp.readFile(path.join(dir, 'out.png'));
+  } finally { fsp.rm(dir, { recursive: true, force: true }).catch(() => {}); }
+}
+
 let training = null; // { started, log: [], progress }
 const trainLog = [];
 function log(msg) { const line = `${new Date().toLocaleString()}  ${msg}`; trainLog.push(line); if (trainLog.length > 200) trainLog.shift(); console.log(line); }
@@ -216,7 +262,7 @@ async function api(req, res, p) {
   const user = config.users.find((u) => u.code === String(req.headers['x-pair-code'] || '').toUpperCase());
   if (!user) return send(res, 401, { error: 'Wrong or missing pairing code' });
   const m = req.method;
-  if (p === '/api/ping') return send(res, 200, { ok: true, server: 'mezuzah-pc', letters: library.length, model: state.currentModel, role: user.role, name: user.name, spots: spotsVer });
+  if (p === '/api/ping') return send(res, 200, { ok: true, server: 'mezuzah-pc', letters: library.length, model: state.currentModel, role: user.role, name: user.name, spots: spotsVer, scan: tools.scan && user.role === 'owner', pdf: tools.pdf && user.role === 'owner' });
   if (p === '/api/marks' && m === 'POST') { const b = await readBody(req, 2e6); const r = setMarks(b, user, safeId(b.device)); return send(res, r.error ? 400 : 200, r); }
   if (p === '/api/spots' && m === 'GET') return send(res, 200, Object.values(marks).map(({ uid, label, zoom, marks: mk }) => ({ uid, label, zoom, marks: mk })));
 
@@ -225,6 +271,26 @@ async function api(req, res, p) {
     if (p === '/api/samples' && m === 'POST') { const b = await readBody(req); return send(res, 200, { ok: true, added: await addSamples(b.items, safeId(b.device), null, user) }); }
     if (p === '/api/scans' && m === 'POST') { const b = await readBody(req); return send(res, 200, { ok: true, added: await addSamples(b.samples, safeId(b.device), null, user) }); }
     if (p !== '/api/model/meta' && p !== '/api/model') return send(res, 403, { error: 'This pairing code can only share letters' });
+  }
+
+  // the scanner connected to this PC, and PDF files (first page) – for the owner only
+  if (p === '/api/scanners' && m === 'GET') {
+    if (!tools.scan) return send(res, 200, { ok: false, error: 'no-sane' });
+    try { return send(res, 200, { ok: true, list: await listScanners() }); } catch (e) { return send(res, 200, { ok: false, error: e.text || e.message }); }
+  }
+  if (p === '/api/scan' && m === 'POST') {
+    if (!tools.scan) return send(res, 400, { error: 'no-sane' });
+    const b = await readBody(req, 1e4);
+    const dpi = [150, 200, 300, 400, 600, 800, 1200].includes(Number(b.dpi)) ? Number(b.dpi) : 600;
+    const dev = typeof b.device === 'string' && /^[\w:.\-\/@%=?&+,\[\] ]{1,200}$/.test(b.device) ? b.device : '';
+    try { const png = await scanPage(dev, dpi); log(`Scanned a page (${dpi} dpi).`); return send(res, 200, png, 'image/png'); }
+    catch (e) { return send(res, 500, { error: e.killed ? 'The scanner took too long' : (e.text || e.message) }); }
+  }
+  if (p === '/api/pdf' && m === 'POST') {
+    if (!tools.pdf) return send(res, 400, { error: 'no-pdftoppm' });
+    const buf = await readRaw(req, 80e6);
+    if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') return send(res, 400, { error: 'Not a PDF file' });
+    try { return send(res, 200, await pdfPage(buf), 'image/png'); } catch (e) { return send(res, 500, { error: e.text || e.message }); }
   }
 
   if (p === '/api/users' && m === 'GET') {
@@ -395,6 +461,7 @@ server.on('error', (e) => {
 server.listen(PORT, LAN ? '0.0.0.0' : '127.0.0.1', () => {
   console.log('\n  Mezuzah Checker – PC program');
   console.log(`  PC screen:      http://localhost:${PORT}/pc.html`);
+  console.log(`  Check on the PC: http://localhost:${PORT}/   (camera, scanner or a saved file)`);
   console.log(`  Pairing code:   ${config.users[0].code}   (type it into your phone once)`);
   if (config.users.length > 1) console.log(`  Helpers:        ${config.users.length - 1} (manage them on the PC screen → Library & AI)`);
   console.log(`  Data folder:    ${DATA}`);

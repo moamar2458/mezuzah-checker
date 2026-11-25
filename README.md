@@ -73,6 +73,20 @@ keeps its own library on the phone.
   the phone at its next sync – but only if it is at least 97% correct on real letters and not worse than the current one.
 - All checks can be opened on the PC screen with the same red circles and notes.
 
+## Checking on the PC (camera, scanner, saved file)
+
+The PC program also serves the full app at **http://localhost:8080/** (or the button "📷 Check a mezuzah on this PC" on the PC screen).
+It has everything the phone has (customers, review, marking places, certificate…) and syncs into the same PC program by itself
+(it uses the pairing code you typed on the PC screen).
+
+* **Camera** – a built-in or external USB camera. With more than one camera, choose it at the top of the camera picture; the choice is remembered.
+* **Scanner** – the 🖨 button. The PC program scans with SANE (`scanimage`, already part of Ubuntu; USB and network scanners).
+  Lay the klaf on the glass; the white around it is cut away by itself. 600 dpi is a good start.
+  If no scanner is found: `scanimage -L` in a terminal shows what Ubuntu sees.
+  The phone can use the PC's scanner too, when it is synced with the owner's pairing code.
+* **Saved file** – 🖼, or drag the file onto the camera screen. JPG, PNG, WEBP, BMP, or PDF (the first page; opened by the PC program with `pdftoppm`).
+  TIFF and HEIC files cannot be opened by the browser – save them as JPG or PNG.
+
 ## Teaching small details (marked places)
 In **Review unsure letters**, tap a letter, then tap its picture (🔍) to open it big.
 - Tap a place on the letter, or draw a small circle around it, and choose **⚠ Problem** or **✓ Good**; add a short note if you like.

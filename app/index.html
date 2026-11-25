@@ -30,6 +30,7 @@
       <button data-go="history">🕘 History</button>
       <button data-go="reference">📜 Reference text</button>
     </div>
+    <a id="pcLink" class="button" href="pc.html" hidden data-he="🖥 מסך המחשב (כל הבדיקות, לקוחות, אימון)">🖥 PC screen (all checks, customers, training)</a>
     <div id="homeStatus" class="small"></div>
     <p class="disclaimer">This app never decides whether a mezuzah is kosher. It only points to places for the sofer to check.</p>
   </section>
@@ -75,6 +76,7 @@
     <div class="cam-wrap">
       <video id="video" playsinline muted></video>
       <div class="cam-guide"></div>
+      <select id="camPick" class="cam-pick" hidden aria-label="Camera"></select>
       <div class="cam-status">
         <span id="stLight" class="chip">Light</span>
         <span id="stSharp" class="chip">Sharp</span>
@@ -85,13 +87,15 @@
     <div class="cam-buttons">
       <button id="torchBtn" class="round" aria-label="Light">💡</button>
       <button id="shootBtn" class="shoot" aria-label="Take photo"></button>
-      <label class="round" aria-label="Choose photo">🖼<input id="pickFile" type="file" accept="image/*" hidden></label>
+      <label class="round" aria-label="Choose photo" title="Choose photo">🖼<input id="pickFile" type="file" accept="image/*,application/pdf,.pdf" hidden></label>
+      <button id="scanBtn" class="round" hidden aria-label="Scanner" title="Scanner">🖨</button>
     </div>
     <div id="noCam" class="note" hidden>
-      The live camera is not available here (it needs the app to be installed or opened from https).
-      You can still use the phone's own camera:
+      <span id="noCamMsg">The live camera is not available here (it needs the app to be installed or opened from https).
+      You can still use the phone's own camera:</span>
       <label class="big primary file-btn">📷 Take photo<input id="nativeCam" type="file" accept="image/*" capture="environment" hidden></label>
-      <label class="big file-btn">🖼 Choose a photo<input id="pickFile2" type="file" accept="image/*" hidden></label>
+      <label class="big file-btn">🖼 Choose a photo<input id="pickFile2" type="file" accept="image/*,application/pdf,.pdf" hidden></label>
+      <button id="scanBtn2" class="big" hidden data-he="🖨 סריקה מהסורק">🖨 Scan with the scanner</button>
       <p class="small">Tips: good even light, no flash glare, klaf flat, phone straight above, whole klaf in the picture.</p>
     </div>
   </section>
@@ -238,6 +242,16 @@
   </section>
 </main>
 
+<div id="scanBox" class="zoom-box" hidden>
+  <div class="zoom-card scan-card">
+    <div class="zoom-top"><b data-he="סריקה מהסורק">Scan with the scanner</b><button id="scanClose" class="icon-btn" type="button" aria-label="Close">✕</button></div>
+    <p class="small" data-he="הנח את הקלף ישר על זכוכית הסורק, וכסה אותו בעדינות במכסה. האפליקציה חותכת לבד את השטח הלבן מסביב.">Lay the klaf flat on the scanner glass and close the lid gently. The app cuts away the white area around it by itself.</p>
+    <label class="field"><span data-he="סורק">Scanner</span> <select id="scanDev"></select></label>
+    <label class="field"><span data-he="רזולוציה">Resolution</span> <select id="scanDpi"><option value="300">300 dpi</option><option value="600" selected>600 dpi</option><option value="1200">1200 dpi</option></select></label>
+    <div class="row"><button id="scanGo" class="primary" data-he="🖨 סרוק">🖨 Scan</button><button id="scanFind" data-he="חפש סורקים שוב">Look for scanners again</button></div>
+    <div id="scanMsg" class="small"></div>
+  </div>
+</div>
 <canvas id="work" hidden></canvas>
 <script type="module" src="js/app.js"></script>
 </body>

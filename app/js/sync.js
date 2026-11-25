@@ -56,6 +56,28 @@ export async function queueResult(scanUid, result) {
   await db.add('outbox', { kind: 'result', body: { uid: scanUid, result } });
 }
 
+/** Ask the PC program for something that is not part of syncing (the scanner, turning a PDF into a picture). */
+export async function pcRequest(path, opts = {}) {
+  const s = await getSettings();
+  if (!s.code) throw new Error(T('Connect to the PC first (Library & AI → PC sync).', 'קודם צריך להתחבר למחשב (ספרייה ובינה ← סנכרון עם המחשב).'));
+  const base = (s.url || location.origin).replace(/\/+$/, '');
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), opts.timeout || 300000);
+  try {
+    const res = await fetch(base + path, { ...opts, signal: ctrl.signal, headers: { 'x-pair-code': s.code, ...(opts.headers || {}) } });
+    if (!res.ok) {
+      let msg = `${T('PC answered', 'המחשב ענה')} ${res.status}`;
+      try { const j = await res.json(); if (j.error) msg = j.error; } catch { /* not json */ }
+      throw new Error(msg);
+    }
+    return res;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(T('The PC took too long to answer.', 'המחשב לא ענה בזמן.'));
+    if (e instanceof TypeError) throw new Error(T('The PC is not reachable now.', 'המחשב לא זמין כרגע.'));
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
 let running = null;
 /** Try to sync now. Returns { state: 'off' | 'offline' | 'ok' | 'error', waiting, newModel, message } */
 export function syncNow() {
@@ -84,6 +106,7 @@ async function doSync() {
     const ping = await (await call(base, s, '/api/ping', { timeout: 6000 })).json();
     role = ping.role || 'owner'; spotsVer = ping.spots ?? null;
     if (role !== s.role) await saveSettings({ role, userName: ping.name || '' });
+    if (!!ping.scan !== !!s.scan || !!ping.pdf !== !!s.pdf) await saveSettings({ scan: !!ping.scan, pdf: !!ping.pdf });
   } catch (e) {
     const r = { state: e.auth ? 'error' : 'offline', waiting, message: e.auth ? e.message : T('PC not reachable', 'המחשב לא זמין') };
     await db.set('syncStatus', { ...r, at: Date.now() });
