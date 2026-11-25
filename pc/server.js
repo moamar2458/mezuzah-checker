@@ -399,6 +399,6 @@ server.listen(PORT, LAN ? '0.0.0.0' : '127.0.0.1', () => {
   if (config.users.length > 1) console.log(`  Helpers:        ${config.users.length - 1} (manage them on the PC screen → Library & AI)`);
   console.log(`  Data folder:    ${DATA}`);
   console.log(`  Letters:        ${library.length} in the library, AI: ${state.currentModel || 'none yet'}`);
-  console.log(LAN ? '  Open to the home network (no https: the phone uses its own camera app).' : '  For the phone, run:  tailscale serve --bg ' + PORT);
+  console.log(LAN ? '  Open to the home network (no https: the phone uses its own camera app).' : `  For the phone (once, private to your tailnet):  sudo tailscale serve --bg --https=8443 ${PORT}`);
   console.log('');
 });
