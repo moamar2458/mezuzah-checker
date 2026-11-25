@@ -460,8 +460,8 @@ server.on('error', (e) => {
 });
 server.listen(PORT, LAN ? '0.0.0.0' : '127.0.0.1', () => {
   console.log('\n  Mezuzah Checker – PC program');
-  console.log(`  PC screen:      http://localhost:${PORT}/pc.html`);
-  console.log(`  Check on the PC: http://localhost:${PORT}/   (camera, scanner or a saved file)`);
+  console.log(`  Check a mezuzah: http://localhost:${PORT}/   (camera, scanner or a saved file)`);
+  console.log(`  PC screen:       http://localhost:${PORT}/pc.html   (all checks, customers, training)`);
   console.log(`  Pairing code:   ${config.users[0].code}   (type it into your phone once)`);
   if (config.users.length > 1) console.log(`  Helpers:        ${config.users.length - 1} (manage them on the PC screen → Library & AI)`);
   console.log(`  Data folder:    ${DATA}`);

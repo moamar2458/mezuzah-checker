@@ -40,7 +40,7 @@ A free, offline phone app that helps a sofer check a mezuzah from a photo.
    **Enable HTTPS** (HTTPS Certificates).
 4. Double-click **`start-windows.bat`**. A black window opens – keep it open while you work. It shows:
    - the **pairing code** (for example `8TK8-7W2T`),
-   - and it opens the **PC screen** in the browser (http://localhost:8080/pc.html) – type the pairing code there once.
+   - and it opens **checking a mezuzah** in the browser (http://localhost:8080/). The button at the top, "🖥 Mezuzah Checker – PC", opens the **PC screen** (http://localhost:8080/pc.html) – type the pairing code there once.
 5. The first time, Tailscale may print a link asking to allow "Serve" – open it and allow.
    Then run `tailscale serve status` in a command window to see your PC's address,
    like `https://my-pc.tail1234.ts.net`.
@@ -75,7 +75,7 @@ keeps its own library on the phone.
 
 ## Checking on the PC (camera, scanner, saved file)
 
-The PC program also serves the full app at **http://localhost:8080/** (or the button "📷 Check a mezuzah on this PC" on the PC screen).
+The PC program serves the full app at **http://localhost:8080/** – it is the first page the PC program opens.
 It has everything the phone has (customers, review, marking places, certificate…) and syncs into the same PC program by itself
 (it uses the pairing code you typed on the PC screen).
 
@@ -86,6 +86,17 @@ It has everything the phone has (customers, review, marking places, certificate�
   The phone can use the PC's scanner too, when it is synced with the owner's pairing code.
 * **Saved file** – 🖼, or drag the file onto the camera screen. JPG, PNG, WEBP, BMP, or PDF (the first page; opened by the PC program with `pdftoppm`).
   TIFF and HEIC files cannot be opened by the browser – save them as JPG or PNG.
+
+## Klaf frame, cut-out and "take it again"
+
+* While the camera is open, the app looks for the klaf (like a document scanner): a green frame is drawn around the klaf only,
+  everything around it is darkened, and the camera is asked to focus on the klaf.
+* After the photo (or a scan / saved file), the klaf is cut out and straightened (also when the photo was taken at an angle).
+  Only the klaf is checked – cloth, case and table are never checked.
+* The photo is not checked at all, and nothing is saved, when it is too blurry, too dark, the klaf cannot be found,
+  fewer than 45% of the letters can be read, or it gives more than 120 unclear places. The app says why and asks for a new photo.
+* "White spot inside the ink" is only marked when the spot is big enough to see, nearly as bright as the klaf, and narrower than
+  the stroke (a real gap or crack). Klaf texture, light and photo noise are not marked. Numbers: `HOLE_*` in `app/js/problems.js`.
 
 ## Teaching small details (marked places)
 In **Review unsure letters**, tap a letter, then tap its picture (🔍) to open it big.
@@ -169,6 +180,7 @@ inside touching groups, 0 missing, 10 places marked).
 ## Folder map
 ```
 pc/server.js          PC program           app/pc.html         PC screen
+app/js/klaf.js        finding the klaf in a photo and cutting it out straight
 app/js/sync.js        phone ↔ PC sync      data/               everything the PC stores
 app/index.html        phone app            app/js/segment.js   lines, letters, words
 app/train.html        AI trainer           app/js/align.js     match letters to the text

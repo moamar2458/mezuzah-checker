@@ -17,16 +17,32 @@ function backgroundHoles(m, w, h) {
     id++;
     const stack = [s]; lab[s] = id;
     let area = 0, border = false, sx = 0, sy = 0;
+    const px = [];
     while (stack.length) {
       const p = stack.pop(); const x = p % w, y = (p / w) | 0;
-      area++; sx += x; sy += y;
+      area++; sx += x; sy += y; px.push(p);
       if (x === 0 || y === 0 || x === w - 1 || y === h - 1) border = true;
       const nb = [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1];
       for (const q of nb) if (q >= 0 && !m[q] && !lab[q]) { lab[q] = id; stack.push(q); }
     }
-    if (!border) holes.push({ area, x: sx / area, y: sy / area });
+    if (!border) holes.push({ area, x: sx / area, y: sy / area, px });
   }
   return holes.sort((a, b) => b.area - a.area);
+}
+
+export const HOLE_MIN = 0.06;    // smallest white spot: this part of the letter height, squared
+export const HOLE_BRIGHT = 0.8;  // and at least this bright compared with the klaf
+export const HOLE_WIDE = 0.8;    // and narrower than this part of the stroke width
+
+/** Brightness of the klaf just around a letter (from the normalised picture). */
+function klafAround(seg, b) {
+  const vals = [];
+  const pad = Math.round(seg.H * 0.4);
+  const x0 = Math.max(0, b.x0 - pad), x1 = Math.min(seg.w - 1, b.x1 + pad), y0 = Math.max(0, b.y0 - pad), y1 = Math.min(seg.h - 1, b.y1 + pad);
+  const step = Math.max(1, Math.round(seg.H / 12));
+  for (let y = y0; y <= y1; y += step) for (let x = x0; x <= x1; x += step) vals.push(seg.norm.d[y * seg.w + x]);
+  vals.sort((a, b) => b - a);
+  return Math.max(60, vals[Math.floor(vals.length * 0.2)] || 235);
 }
 
 /**
@@ -43,13 +59,35 @@ export function inspectLetter(seg, g, ch, sens = 0.15) {
   const { m, w, h } = maskFromLabels(seg.labels, seg.w, box, g.ids);
   let ink = 0; for (const v of m) ink += v;
 
+  const dt = distanceTransform(m, w, h);
+  const sk = skeletonize(m, w, h);
+  const widths = [];
+  for (let i = 0; i < sk.length; i++) if (sk[i]) widths.push(2 * dt[i]);
+  const strokeW = median(widths);
+
   // holes = white spots inside the ink (possible crack / missing ink), or a closed shape
   const holes = backgroundHoles(m, w, h);
-  const minHole = Math.max(2, (seg.H * 0.03) ** 2);
+  // A real gap shows the klaf through the ink: big enough to see, and nearly as bright as the klaf around the letter.
+  // Tiny or greyish specks are klaf texture, light and photo noise – not checked.
+  const minHole = Math.max(6, (seg.H * HOLE_MIN) ** 2);
+  const paper = klafAround(seg, box);
+  let nHoles = 0;
   holes.forEach((hole, k) => {
     if (k === 0 && ch && [...ch].some((c) => HAS_HOLE.has(c))) return; // the natural inside of ם ס ט
     if (hole.area < minHole) return;
     const big = hole.area > 0.06 * w * h;
+    if (!big) {
+      // the brightest part of the spot, compared with the klaf (0 = like the ink, 1 = like the klaf)
+      const vals = hole.px.map((p) => seg.norm.d[(box.y0 + ((p / w) | 0)) * seg.w + box.x0 + (p % w)]).sort((a, b) => b - a);
+      const top = vals[Math.floor(vals.length * 0.25)];
+      if (top < paper * HOLE_BRIGHT) return;
+      // a gap inside a stroke is narrower than the stroke; a wider one is the space between two strokes (closed by a crown or blur)
+      const hm = new Uint8Array(w * h); for (const p of hole.px) hm[p] = 1;
+      const hd = distanceTransform(hm, w, h);
+      let wide = 0; for (const p of hole.px) if (hd[p] > wide) wide = hd[p];
+      if (2 * wide > HOLE_WIDE * Math.max(2, strokeW)) return;
+      if (++nHoles > 2) return; // a letter full of spots is a noisy photo, not many cracks
+    }
     out.push({
       kind: big ? 'closed' : 'hole', x: box.x0 + hole.x, y: box.y0 + hole.y,
       note: big ? T('Shape looks closed here - check that the letter is not closed', 'הצורה נראית סגורה כאן - לבדוק שהאות לא סגורה') : T('White spot inside the ink - check for a crack or missing ink', 'נקודה לבנה בתוך הדיו - לבדוק סדק או חסר דיו'),
@@ -57,11 +95,6 @@ export function inspectLetter(seg, g, ch, sens = 0.15) {
   });
 
   // thin places along the strokes
-  const dt = distanceTransform(m, w, h);
-  const sk = skeletonize(m, w, h);
-  const widths = [];
-  for (let i = 0; i < sk.length; i++) if (sk[i]) widths.push(2 * dt[i]);
-  const strokeW = median(widths);
   if (strokeW >= 6) {
     const nb = (x, y) => {
       let c = 0;

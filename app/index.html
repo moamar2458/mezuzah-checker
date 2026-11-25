@@ -19,6 +19,7 @@
 <main>
   <!-- HOME -->
   <section id="home" class="screen">
+    <a id="pcLink" class="button pc-link" href="pc.html" hidden data-he="🖥 בודק מזוזות – מחשב (כל הבדיקות, לקוחות, אימון)">🖥 Mezuzah Checker – PC (all checks, customers, training)</a>
     <div id="refWarn" class="note warn" hidden>Please confirm the reference text before the first check. <button class="link" data-go="reference">Open reference text</button></div>
     <div id="dueBanner" class="note warn" hidden></div>
     <button class="big primary" id="checkBtn">📷 Check a mezuzah</button>
@@ -30,7 +31,6 @@
       <button data-go="history">🕘 History</button>
       <button data-go="reference">📜 Reference text</button>
     </div>
-    <a id="pcLink" class="button" href="pc.html" hidden data-he="🖥 מסך המחשב (כל הבדיקות, לקוחות, אימון)">🖥 PC screen (all checks, customers, training)</a>
     <div id="homeStatus" class="small"></div>
     <p class="disclaimer">This app never decides whether a mezuzah is kosher. It only points to places for the sofer to check.</p>
   </section>
@@ -76,11 +76,13 @@
     <div class="cam-wrap">
       <video id="video" playsinline muted></video>
       <div class="cam-guide"></div>
+      <canvas id="camFrame" class="cam-frame"></canvas>
       <select id="camPick" class="cam-pick" hidden aria-label="Camera"></select>
       <div class="cam-status">
         <span id="stLight" class="chip">Light</span>
         <span id="stSharp" class="chip">Sharp</span>
         <span id="stLevel" class="chip">Level</span>
+        <span id="stKlaf" class="chip" data-he="קלף ?">Klaf ?</span>
       </div>
       <div id="camTip" class="cam-tip">Lay the klaf flat, fill the frame, hold the phone straight above it.</div>
     </div>
@@ -104,6 +106,15 @@
   <section id="busy" class="screen" hidden>
     <div class="spinner"></div>
     <p id="busyMsg">Finding the letters…</p>
+  </section>
+
+  <!-- RETAKE: the photo is not good enough to check -->
+  <section id="retake" class="screen" hidden>
+    <div id="retakeMsg" class="note bad"></div>
+    <p class="small" data-he="לא נבדק דבר בתמונה הזאת, וגם לא נשמר. טיפים: קלף שטוח על בד כהה וחלק, אור אחיד בלי ברק, הטלפון ישר מעל הקלף, והמסגרת הירוקה סביב הקלף בלבד.">Nothing in this photo was checked or saved. Tips: klaf flat on a dark plain cloth, even light without glare, the phone straight above it, and the green frame around the klaf only.</p>
+    <div class="row"><button id="retakeGo" class="primary big" data-he="📷 צלם שוב">📷 Take the photo again</button></div>
+    <div class="row"><button data-go="home" data-he="לדף הבית">Home</button></div>
+    <div class="canvas-wrap" dir="ltr"><canvas id="retakeCanvas"></canvas></div>
   </section>
 
   <!-- REPORT -->

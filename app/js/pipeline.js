@@ -8,6 +8,7 @@ import { LETTERS, LETTER_INDEX, LETTER_NAMES } from './reference.js';
 import { median } from './imageproc.js';
 import { T } from './i18n.js';
 import { ZOOM, viewSquare, findTaught, goodLike } from './spots.js';
+import { findKlaf, warpQuad } from './klaf.js';
 
 const name = (ch) => T(`${ch} (${LETTER_NAMES[ch]})`, ch);
 
@@ -37,6 +38,7 @@ export function photoQuality(seg) {
     else if (norm.d[i] < 190) mid++;
   }
   const blurRatio = ink ? mid / ink : 0;
+  const blurPx = edgeBlur(norm);
   const mean = sum / gray.d.length;
   if (mean < 70) warnings.push({ kind: 'dark', note: T('Photo is dark. Add light (no direct flash glare) and take it again.', 'התמונה חשוכה. הוסף אור (בלי ברק ישיר של פלאש) וצלם שוב.') });
   if (blurRatio > 0.9) warnings.push({ kind: 'blur', note: T('Photo looks blurry. Hold the phone still, tap to focus, and take it again.', 'התמונה מטושטשת. החזק את הטלפון יציב, גע במסך למיקוד וצלם שוב.') });
@@ -55,20 +57,66 @@ export function photoQuality(seg) {
     }
   }
   if (seg.H < 18) warnings.push({ kind: 'small', note: T('Letters are small in the photo. Move the phone closer so the klaf fills the screen.', 'האותיות קטנות בתמונה. קרב את הטלפון כך שהקלף ימלא את המסך.') });
-  return { warnings, blurRatio, brightness: mean, angleDeg: deg, letterHeightPx: seg.H };
+  return { warnings, blurRatio, blurPx, blurRel: blurPx / Math.max(1, seg.H), brightness: mean, angleDeg: deg, letterHeightPx: seg.H };
+}
+
+const BLUR_RETAKE = 0.065;  // edge blur (as part of the letter height) above this: too blurry to check (calibrated on test photos)
+const MAX_ISSUES = 120;  // more marks than this means a bad photo, not a bad mezuzah
+
+/**
+ * How soft the edges of the ink are, in pixels (about the blur radius).
+ * A sharp edge goes from ink to klaf in a step; a blurred one slowly. Measured on the strongest edges.
+ */
+function edgeBlur(norm) {
+  const { w, h, d } = norm;
+  const hist = new Uint32Array(512), lv = new Uint32Array(256);
+  let n = 0;
+  for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 1) {
+    const i = y * w + x;
+    const gx = (d[i + 1] - d[i - 1]) / 2, gy = (d[i + w] - d[i - w]) / 2;
+    hist[Math.min(511, Math.hypot(gx, gy) | 0)]++; lv[Math.max(0, Math.min(255, d[i] | 0))]++; n++;
+  }
+  const pct = (hs, q) => { let s = 0; for (let v = 0; v < hs.length; v++) { s += hs[v]; if (s >= n * q) return v; } return hs.length - 1; };
+  const g = Math.max(1, pct(hist, 0.995));
+  const contrast = Math.max(20, pct(lv, 0.9) - pct(lv, 0.02));
+  return contrast / (2.5 * g);
+}
+
+/** Brightness of the klaf (85% of the picture is darker than this). */
+function paperLevel(rgba) {
+  const hist = new Uint32Array(256);
+  let n = 0;
+  for (let i = 0; i < rgba.length; i += 4 * 7) { hist[(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]) | 0]++; n++; }
+  let s = 0; for (let v = 0; v < 256; v++) { s += hist[v]; if (s >= n * 0.85) return v; }
+  return 255;
 }
 
 /**
  * rgba/w/h: the photo, already scaled to analysis size.
  * opts: { ref (parsed reference), model (optional), sens (crack sensitivity 0.2..0.5) }
  */
-export function analyze(rgba, w, h, opts) {
-  const { ref, sens = 0.15, spots = null } = opts;
+export function analyze(rgbaIn, wIn, hIn, opts) {
+  const { ref, sens = 0.15, spots = null, maxSide = 3200 } = opts;
+  // 0. find the klaf and cut it out straight: nothing outside it (cloth, case, table) is checked
+  const found = opts.noKlaf ? null : findKlaf(rgbaIn, wIn, hIn);
+  let rgba = rgbaIn, w = wIn, h = hIn;
+  const whole = [[0, 0], [wIn, 0], [wIn, hIn], [0, hIn]];
+  if ((found && !found.full) || Math.max(wIn, hIn) > maxSide) ({ rgba, w, h } = warpQuad(rgbaIn, wIn, hIn, found && !found.full ? found.quad : whole, maxSide));
+  const klaf = { found: !!(found && !found.full), quad: found && !found.full ? found.quad : null, cover: found ? found.cover : null };
+  let qbase = {};
+  const retake = (kind, note, extra = {}) => ({ ok: false, retake: kind, rgba, w, h, issues: [], klaf, quality: { ...qbase, warnings: [{ kind, note }] }, ...extra });
+
+  // too dark to see the ink well
+  const paper = paperLevel(rgba);
+  if (paper < 60) return retake('dark', T('The photo is too dark. Add light (no direct flash glare on the klaf) and take it again.', 'התמונה חשוכה מדי. הוסף אור (בלי ברק ישיר של פלאש על הקלף) וצלם שוב.'));
+
   const seg = segment(rgba, w, h);
-  if (!seg.ok) {
-    return { ok: false, rgba: seg.rgba, w, h, issues: [], quality: { warnings: [{ kind: 'notext', note: T('Could not find the letters. Make sure the whole klaf is in the photo, sharp and well lit.', 'לא נמצאו האותיות. ודא שכל הקלף בתמונה, חד ומואר היטב.') }] } };
-  }
+  if (!seg.ok) return retake('notext', T('The klaf or its letters could not be found. Lay the klaf flat on a dark plain cloth, fill the frame with it, and take the photo again.', 'לא נמצאו הקלף או האותיות. הנח את הקלף שטוח על בד כהה וחלק, מלא איתו את המסגרת וצלם שוב.'));
   const quality = photoQuality(seg);
+  quality.klaf = klaf; qbase = { blurRatio: quality.blurRatio, blurPx: quality.blurPx, blurRel: quality.blurRel, letterHeightPx: seg.H };
+  // a mezuzah has about 22 lines: a handful of short "lines" means letters were not found (no klaf, or far away)
+  if (seg.lines.length < 12 || seg.H < 14) return retake('noklaf', T('The klaf could not be found in the photo. Lay the klaf flat, fill the frame with it (the green frame shows what was found) and take the photo again.', 'הקלף לא נמצא בתמונה. הנח את הקלף שטוח, מלא איתו את המסגרת (המסגרת הירוקה מראה מה נמצא) וצלם שוב.'), { rgba: seg.rgba });
+  if (quality.blurRel > BLUR_RETAKE) return retake('blur', T('The photo is too blurry to check. Hold the phone still, tap the klaf to focus, and take it again.', 'התמונה מטושטשת מדי לבדיקה. החזק את הטלפון יציב, גע בקלף למיקוד וצלם שוב.'), { rgba: seg.rgba });
   // An AI that has only seen font letters is wrong on real handwriting, so it is used
   // only after it learned from enough real letters and was tested on real letters.
   let model = opts.model || null;
@@ -239,8 +287,11 @@ export function analyze(rgba, w, h, opts) {
   }
 
   const matched = steps.filter((s) => s.op === 'M').length;
+  // hundreds of marks or most of the text not found = the photo is not good enough, not a hundred problems
+  if (matched < ref.length * 0.45) return retake('notfound', T(`Only ${matched} of ${ref.length} letters could be read. Make sure the whole klaf is in the photo, flat, sharp and well lit, and take it again.`, `רק ${matched} מתוך ${ref.length} אותיות נקראו. ודא שכל הקלף בתמונה, שטוח, חד ומואר היטב, וצלם שוב.`), { rgba: seg.rgba });
+  if (issues.length > MAX_ISSUES) return retake('unclear', T(`The photo gave ${issues.length} unclear places – too many to be real. Take the photo again: klaf flat, even light, phone straight above it, and only the klaf in the frame.`, `התמונה נתנה ${issues.length} מקומות לא ברורים – יותר מדי מכדי שיהיו אמיתיים. צלם שוב: קלף שטוח, אור אחיד, טלפון ישר מעליו, ורק הקלף במסגרת.`), { rgba: seg.rgba });
   return {
-    ok: true, rgba: seg.rgba, w, h, issues, quality, samples,
+    ok: true, rgba: seg.rgba, w, h, issues, quality, samples, klaf,
     stats: {
       found: letters.length, expected: ref.length, matched, lines: seg.lines.length,
       missing: steps.filter((s) => s.op === 'D').length, extra: steps.filter((s) => s.op === 'I').length,

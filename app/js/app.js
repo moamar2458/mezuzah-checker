@@ -20,10 +20,11 @@ import { HE_APP } from './lang-he.js';
 translatePage(HE_APP);
 
 const $ = (id) => document.getElementById(id);
-const ANALYSIS_MAX = 3200; // longest side of the picture used for checking
+const ANALYSIS_MAX = 3200; // longest side of the klaf picture used for checking
+const INPUT_MAX = 4200;    // the photo is sent this big, so the klaf keeps its detail after it is cut out
 const TITLES = {
   home: T('Mezuzah Checker', 'בודק מזוזות'), camera: T('Take a photo', 'צילום'), busy: T('Checking…', 'בודק…'), report: T('Places to check', 'מקומות לבדיקה'),
-  learned: T('Learned', 'נלמד'), review: T('Review unsure letters', 'אותיות לבדיקה'), library: T('Library & AI', 'ספרייה ובינה'), reference: T('Reference text', 'נוסח המזוזה'), history: T('History', 'היסטוריה'),
+  learned: T('Learned', 'נלמד'), retake: T('Take the photo again', 'צלם שוב'), review: T('Review unsure letters', 'אותיות לבדיקה'), library: T('Library & AI', 'ספרייה ובינה'), reference: T('Reference text', 'נוסח המזוזה'), history: T('History', 'היסטוריה'),
   who: T('Who is this check for?', 'עבור מי הבדיקה?'), customers: T('Customers & reminders', 'לקוחות ותזכורות'), customer: T('Customer', 'לקוח'), compare: T('Before / after', 'לפני / אחרי'), cert: T('Result & certificate', 'תוצאה ותעודה'),
 };
 
@@ -344,7 +345,34 @@ function camStatus(s) {
   if (s.light === 'glare') tips.push(T('Move the light to avoid shine on the klaf.', 'הזז את האור כדי שלא יהיה ברק על הקלף.'));
   if (s.sharp !== 'ok') tips.push(T('Hold still, tap the screen to focus.', 'החזק יציב, גע במסך למיקוד.'));
   if (s.level === 'tilted') tips.push(T('Hold the phone flat, straight above the klaf.', 'החזק את הטלפון שטוח, ישר מעל הקלף.'));
+  // the klaf found in the picture: a green frame around it (and only it)
+  const k = s.klaf, found = k && !k.full;
+  set($('stKlaf'), k ? true : false, found ? T('Klaf ✓', 'קלף ✓') : k ? T('Klaf fills the frame', 'הקלף ממלא את המסגרת') : T('No klaf', 'אין קלף'));
+  if (!k) tips.unshift(T('Put the whole klaf in the picture, on a dark plain cloth.', 'הכנס את כל הקלף לתמונה, על בד כהה וחלק.'));
+  if (found) {
+    const area = Math.abs(k.quad.reduce((a, p, i) => { const q = k.quad[(i + 1) % 4]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
+    if (area < 0.3) tips.push(T('Move closer: let the klaf fill most of the frame.', 'התקרב: שהקלף ימלא את רוב המסגרת.'));
+  }
   $('camTip').textContent = tips.join(' ') || T('Looks good — take the photo.', 'נראה טוב — צלם.');
+  drawCamFrame(found ? k.quad : null);
+}
+function drawCamFrame(quad) {
+  const cv = $('camFrame'), wrap = cv.parentElement, v = $('video');
+  const cw = wrap.clientWidth, ch = wrap.clientHeight;
+  if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+  wrap.classList.toggle('has-klaf', !!quad);
+  if (!quad || !v.videoWidth) return;
+  // the video is shown whole (object-fit: contain): where does it sit on the screen?
+  const sc = Math.min(cw / v.videoWidth, ch / v.videoHeight);
+  const ox = (cw - v.videoWidth * sc) / 2, oy = (ch - v.videoHeight * sc) / 2;
+  const pts = quad.map(([x, y]) => [ox + x * v.videoWidth * sc, oy + y * v.videoHeight * sc]);
+  ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+  // darken everything outside the klaf, and outline the klaf
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, cw, ch); ctx.globalCompositeOperation = 'destination-out'; ctx.fill(); ctx.restore();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#3ddc84'; ctx.stroke();
+  ctx.fillStyle = '#3ddc84'; for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); }
 }
 let torchOn = false;
 $('torchBtn').onclick = async () => { torchOn = !torchOn; if (camera && !(await camera.torch(torchOn))) { torchOn = false; alert(T('This phone does not allow the light to be turned on from the app.', 'הטלפון הזה לא מאפשר להדליק את הפנס מהאפליקציה.')); } };
@@ -474,7 +502,7 @@ async function process(img) {
   show('busy', false);
   $('busyMsg').textContent = state.mode === 'learn' ? T('Finding and learning the letters…', 'מחפש ולומד את האותיות…') : T('Finding the letters and comparing with the text…', 'מחפש את האותיות ומשווה לנוסח…');
   const iw = img.width, ih = img.height;
-  const scale = Math.min(1, ANALYSIS_MAX / Math.max(iw, ih));
+  const scale = Math.min(1, INPUT_MAX / Math.max(iw, ih));
   const w = Math.round(iw * scale), h = Math.round(ih * scale);
   const c = $('work'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -482,12 +510,14 @@ async function process(img) {
   const data = ctx.getImageData(0, 0, w, h).data;
   let res;
   try {
-    res = await runJob({ rgba: data.buffer, w, h, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang(), spots: await spotMemory() }, [data.buffer]);
+    res = await runJob({ rgba: data.buffer, w, h, maxSide: ANALYSIS_MAX, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang(), spots: await spotMemory() }, [data.buffer]);
   } catch (err) {
     alert(T('Something went wrong while checking:\n', 'משהו השתבש בבדיקה:\n') + err.message);
     show('home', false); return;
   }
   res.rgba = new Uint8ClampedArray(res.rgba);
+  // not good enough to check (too blurry, too dark, no klaf, far too many unclear places): say so, save nothing
+  if (res.retake) { showRetake(res); return; }
   sortIssues(res.issues || [], (res.quality && res.quality.letterHeightPx) || 40);
   drawReport(res);
   // keep the clean (straightened) photo; the circles are drawn again when it is shown
@@ -734,6 +764,16 @@ function focusIssue(k) {
   centerOn(is.x / current.w, is.y / current.h);
   $('canvasWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+
+function showRetake(res) {
+  show('retake', false);
+  stack.length = 0; stack.push('home');
+  const w = (res.quality && res.quality.warnings && res.quality.warnings[0]) || {};
+  $('retakeMsg').textContent = `📷 ${w.note || T('Please take the photo again.', 'נא לצלם שוב.')}`;
+  const cv = $('retakeCanvas'); cv.width = res.w; cv.height = res.h;
+  cv.getContext('2d').putImageData(new ImageData(res.rgba, res.w, res.h), 0, 0);
+}
+$('retakeGo').onclick = () => startCapture(state.mode, true);
 
 function showLearned(res, learned) {
   show('learned', false);
