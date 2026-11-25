@@ -1,0 +1,7 @@
+# private: customer data, photos, trained AI
+data/
+pc/data/
+*.jsonl
+app/dev/photos/
+node_modules/
+.claude/

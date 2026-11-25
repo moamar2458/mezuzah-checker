@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mezuzah Checker – PC</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    main.pc { max-width: 1400px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tabs button.on { background: var(--primary); color: var(--primary-ink); }
+    .pc-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 800px) { .pc-grid { grid-template-columns: 1fr; } }
+    .scan-list { list-style: none; padding: 0; margin: 0; max-height: 80vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+    .scan-list li { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .scan-list li.sel { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+    .scan-list .meta { font-size: 13px; color: var(--muted); }
+    .viewer .canvas-wrap { max-height: 72vh; }
+    .issues-pc { columns: 2 320px; }
+    .issues-pc li { break-inside: avoid; }
+    .cust-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: var(--card); }
+    .cust-table th, .cust-table td { text-align: start; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .pend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; margin: 8px 0; }
+    .pend-grid div { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
+    .pend-grid canvas { width: 100%; display: block; }
+    .pend-grid span { position: absolute; right: 2px; bottom: 0; color: #0050b0; font-weight: 700; }
+    pre.log { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-height: 300px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<header><h1>Mezuzah Checker – PC</h1></header>
+<main class="pc">
+  <section id="pair" hidden>
+    <h2>Enter the pairing code</h2>
+    <p class="small">It is shown in the black PC program window.</p>
+    <label class="field">Pairing code <input id="code" placeholder="ABCD-1234" autocomplete="off"></label>
+    <button class="primary" id="codeBtn">Open</button> <span id="codeMsg" class="small"></span>
+  </section>
+
+  <div id="ui" hidden>
+    <div class="tabs"><button id="tabChecks" class="on">Checks</button><button id="tabCust">Customers &amp; reminders</button><button id="tabLib">Library &amp; AI</button></div>
+
+    <section id="checks" class="pc-grid">
+      <div>
+        <div class="row" style="margin-top:0"><button id="csvBtn">⬇ Export all checks (CSV)</button></div>
+        <div class="small" id="scanCount"></div>
+        <ul id="scanList" class="scan-list"></ul>
+      </div>
+      <div class="viewer" id="viewer">
+        <p class="small">Choose a check on the left.</p>
+      </div>
+    </section>
+
+    <section id="cust" hidden>
+      <div id="pcDue"></div>
+      <h2>All customers</h2>
+      <input id="pcCustFilter" class="search" placeholder="Search" style="max-width:420px">
+      <table class="cust-table"><thead><tr><th>Customer</th><th>Phone</th><th>Mezuzah</th><th>Last check</th><th>Next check</th></tr></thead><tbody id="pcCustBody"></tbody></table>
+    </section>
+
+    <section id="lib" hidden>
+      <h2>Learning library on this PC</h2>
+      <div id="libInfo" class="small"></div>
+      <div id="libCounts" class="lib-counts"></div>
+      <h2>People sharing letters</h2>
+      <p class="small">Each helper gets their own pairing code. A helper's phone sends <b>only letter images</b> (no photos, customers or results) and gets the shared AI back. Helpers reach this PC through Tailscale sharing – see README.</p>
+      <table class="cust-table"><thead><tr><th>Name</th><th>Pairing code</th><th>Letters</th><th>Hold for my approval</th><th></th></tr></thead><tbody id="usersBody"></tbody></table>
+      <div class="row" style="max-width:520px"><input id="helperName" class="grow" placeholder="Helper's name"><button id="addHelper">+ Add helper</button></div>
+      <div id="pendBox"></div>
+      <h2>The AI</h2>
+      <div id="modelInfo" class="small"></div>
+      <div class="row" style="max-width:420px"><button class="primary" id="trainBtn">Train the AI now</button></div>
+      <progress id="trainProg" max="1" value="0" style="width:100%" hidden></progress>
+      <pre id="trainLog" class="log"></pre>
+    </section>
+  </div>
+  <p class="disclaimer">This program never decides whether a mezuzah is kosher. It only points to places for the sofer to check.</p>
+</main>
+<script type="module" src="js/pc-app.js"></script>
+</body>
+</html>

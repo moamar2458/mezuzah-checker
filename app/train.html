@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Train the Letter AI</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><a href="index.html" class="icon-btn" style="text-decoration:none;color:inherit">‹</a><h1>Train the letter AI</h1></header>
+<main>
+  <p>The AI learns the 27 shapes of ktav ashuri (22 letters + ך ם ן ף ץ). It learns from:</p>
+  <ol>
+    <li><b>Your library</b> — letters from real mezuzot (exported from the phone with “Export library”).</li>
+    <li><b>Font letters</b> — letters drawn from two free STaM fonts, so the AI has a start even before you have many mezuzot.</li>
+  </ol>
+  <p class="small">Everything runs inside this browser. Nothing is uploaded. On a Windows PC: open this page in Chrome or Edge.</p>
+
+  <h2>1. Letters from real mezuzot</h2>
+  <label class="file-btn">Add library file(s)…<input id="libFiles" type="file" accept=".json,application/json" multiple hidden></label>
+  <button id="useLocal">Use the library on this device</button>
+  <div id="libInfo" class="small">No real letters added yet.</div>
+  <div id="libCounts" class="lib-counts"></div>
+
+  <h2>2. Settings</h2>
+  <label>Font letters per letter shape: <input id="synthN" type="number" value="300" min="0" max="2000" step="50" style="width:90px"></label><br><br>
+  <label>Training rounds (epochs): <input id="epochs" type="number" value="8" min="1" max="60" style="width:70px"></label><br><br>
+  <label class="file-btn">Continue from an existing model (optional)…<input id="startModel" type="file" accept=".json" hidden></label>
+  <span id="startInfo" class="small"></span>
+
+  <h2>3. Train</h2>
+  <button id="trainBtn" class="primary big">▶ Start training</button>
+  <progress id="prog" max="1" value="0" style="width:100%"></progress>
+  <pre id="log" class="small" style="white-space:pre-wrap"></pre>
+  <div id="doneBox" hidden>
+    <div class="row wrap">
+      <button id="saveModel" class="primary">⬇ Download model file</button>
+      <button id="installModel">Use this model on this device</button>
+    </div>
+    <p class="small">Send the model file to the phone (WhatsApp/e-mail/USB/Google Drive…), then in the app: Library &amp; AI → Load trained model.</p>
+  </div>
+</main>
+<script type="module" src="js/train-app.js"></script>
+</body>
+</html>

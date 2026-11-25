@@ -1,0 +1,9 @@
+{
+  "name": "mezuzah-checker",
+  "private": true,
+  "type": "module",
+  "description": "Offline mezuzah checking app (phone) and its PC companion program. No dependencies.",
+  "scripts": {
+    "start": "node pc/server.js"
+  }
+}

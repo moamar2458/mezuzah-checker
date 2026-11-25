@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d2b3a">
+  <title>Mezuzah Checker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <button id="backBtn" class="icon-btn" hidden aria-label="Back">‹</button>
+  <h1 id="title">Mezuzah Checker</h1>
+</header>
+
+<main>
+  <!-- HOME -->
+  <section id="home" class="screen">
+    <div id="refWarn" class="note warn" hidden>Please confirm the reference text before the first check. <button class="link" data-go="reference">Open reference text</button></div>
+    <div id="dueBanner" class="note warn" hidden></div>
+    <button class="big primary" id="checkBtn">📷 Check a mezuzah</button>
+    <button class="big" data-go="customers">👥 Customers &amp; reminders <span id="dueCount" class="badge" hidden>0</span></button>
+    <button class="big" id="learnBtn">🧠 Learn from a mezuzah</button>
+    <button class="big" data-go="review">📝 Review unsure letters <span id="reviewCount" class="badge">0</span></button>
+    <div class="row">
+      <button data-go="library">📚 Library &amp; AI</button>
+      <button data-go="history">🕘 History</button>
+      <button data-go="reference">📜 Reference text</button>
+    </div>
+    <div id="homeStatus" class="small"></div>
+    <p class="disclaimer">This app never decides whether a mezuzah is kosher. It only points to places for the sofer to check.</p>
+  </section>
+
+  <!-- WHO IS THE CHECK FOR -->
+  <section id="who" class="screen" hidden>
+    <label class="field">Customer
+      <input id="custSearch" placeholder="Type a name to search or add" autocomplete="off"></label>
+    <ul id="custPick" class="pick-list"></ul>
+    <button id="newCustBtn" class="big" hidden></button>
+    <div id="itemBox" hidden>
+      <h2 id="itemTitle">Which mezuzah?</h2>
+      <ul id="itemPick" class="pick-list"></ul>
+      <div class="row"><input id="newItemName" class="grow" placeholder="New: e.g. Front door, Kitchen, Bedroom" autocomplete="off"><button id="newItemBtn">Add</button></div>
+    </div>
+    <button id="whoGo" class="big primary" hidden>📷 Take the photo</button>
+    <button id="whoSkip" class="link small">Check without a customer</button>
+  </section>
+
+  <!-- CUSTOMERS -->
+  <section id="customers" class="screen" hidden>
+    <div id="dueBox"></div>
+    <h2>All customers</h2>
+    <input id="custFilter" class="search" placeholder="Search" autocomplete="off">
+    <ul id="custList" class="pick-list"></ul>
+    <button id="addCustBtn" class="big">+ New customer</button>
+  </section>
+
+  <!-- ONE CUSTOMER -->
+  <section id="customer" class="screen" hidden>
+    <label class="field">Name <input id="cName" autocomplete="off"></label>
+    <label class="field">Phone <input id="cPhone" type="tel" autocomplete="off"></label>
+    <label class="field">Address <input id="cAddress" autocomplete="off"></label>
+    <label class="field">Notes <input id="cNotes" autocomplete="off"></label>
+    <div class="row"><button id="cSave" class="primary">Save</button><button id="cDelete" class="danger">Delete customer</button></div>
+    <h2>Mezuzot</h2>
+    <div id="cItems"></div>
+    <div class="row"><input id="cNewItem" class="grow" placeholder="Add: e.g. Front door" autocomplete="off"><button id="cAddItem">Add</button></div>
+  </section>
+
+  <!-- CAMERA -->
+  <section id="camera" class="screen" hidden>
+    <div class="cam-wrap">
+      <video id="video" playsinline muted></video>
+      <div class="cam-guide"></div>
+      <div class="cam-status">
+        <span id="stLight" class="chip">Light</span>
+        <span id="stSharp" class="chip">Sharp</span>
+        <span id="stLevel" class="chip">Level</span>
+      </div>
+      <div id="camTip" class="cam-tip">Lay the klaf flat, fill the frame, hold the phone straight above it.</div>
+    </div>
+    <div class="cam-buttons">
+      <button id="torchBtn" class="round" aria-label="Light">💡</button>
+      <button id="shootBtn" class="shoot" aria-label="Take photo"></button>
+      <label class="round" aria-label="Choose photo">🖼<input id="pickFile" type="file" accept="image/*" hidden></label>
+    </div>
+    <div id="noCam" class="note" hidden>
+      The live camera is not available here (it needs the app to be installed or opened from https).
+      You can still use the phone's own camera:
+      <label class="big primary file-btn">📷 Take photo<input id="nativeCam" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="big file-btn">🖼 Choose a photo<input id="pickFile2" type="file" accept="image/*" hidden></label>
+      <p class="small">Tips: good even light, no flash glare, klaf flat, phone straight above, whole klaf in the picture.</p>
+    </div>
+  </section>
+
+  <!-- BUSY -->
+  <section id="busy" class="screen" hidden>
+    <div class="spinner"></div>
+    <p id="busyMsg">Finding the letters…</p>
+  </section>
+
+  <!-- REPORT -->
+  <section id="report" class="screen" hidden>
+    <div id="forLine" class="for-line"></div>
+    <button id="cmpBtn" class="big" hidden></button>
+    <button id="certBtn" class="big">📜 Result &amp; certificate</button>
+    <div id="qualityBox"></div>
+    <div id="summary" class="summary"></div>
+    <div class="zoom-bar">
+      <button id="zoomOut">−</button><span id="zoomLbl">100%</span><button id="zoomIn">+</button>
+      <label class="small"><input type="checkbox" id="showBoxes"> show found letters</label>
+    </div>
+    <div id="canvasWrap" class="canvas-wrap"><canvas id="reportCanvas"></canvas></div>
+    <ol id="issueList" class="issues"></ol>
+    <p class="disclaimer">These are only places to check. The sofer decides.</p>
+    <div class="row"><button id="retakeBtn">Retake photo</button><button class="primary" data-go="home">Done</button></div>
+  </section>
+
+  <!-- RESULT & CERTIFICATE -->
+  <section id="cert" class="screen" hidden>
+    <div id="certFor" class="for-line"></div>
+    <h2>The sofer's result</h2>
+    <p class="small">You decide. The app does not fill this in.</p>
+    <div id="verdicts" class="verdicts"></div>
+    <label class="field">Notes / what was fixed <textarea id="certNotes" rows="3"></textarea></label>
+    <div class="row"><button id="certSave" class="primary">Save result</button><button id="certPrint">🖨 Print certificate</button></div>
+    <div class="row"><button id="certShare">📤 Send to Melechet Sofer / share</button></div>
+    <div id="certMsg" class="small"></div>
+    <div id="certNeedBiz" class="note warn" hidden>Add your business name in <button class="link" data-go="library">Library &amp; AI → Business details</button> so it appears on the certificate.</div>
+    <h2>Preview</h2>
+    <div id="certPreview" class="cert-preview"></div>
+  </section>
+
+  <!-- BEFORE / AFTER -->
+  <section id="compare" class="screen" hidden>
+    <div id="cmpHead" class="for-line"></div>
+    <p class="small">Each pair shows the same letter: <b>before</b> (left) and <b>now</b> (right). Only letters that changed much more than the rest of the page are listed.</p>
+    <div id="cmpList"></div>
+    <h2>Whole photos</h2>
+    <div class="cmp-whole"><div><div class="small">Before</div><canvas id="cmpOld"></canvas></div><div><div class="small">Now</div><canvas id="cmpNew"></canvas></div></div>
+  </section>
+
+  <!-- LEARN DONE -->
+  <section id="learned" class="screen" hidden>
+    <h2>Added to the library</h2>
+    <div id="learnSummary"></div>
+    <div class="row"><button id="learnAgain">Learn another</button><button data-go="review">Review unsure</button><button class="primary" data-go="home">Done</button></div>
+  </section>
+
+  <!-- REVIEW -->
+  <section id="review" class="screen" hidden>
+    <p class="small">Letters the app was not sure about. Tap a letter, then tell the app what it is. Nothing is learned from these until you confirm.</p>
+    <div id="reviewGrid" class="review-grid"></div>
+    <div id="reviewPanel" class="review-panel" hidden>
+      <div class="review-head"><canvas id="reviewBig" width="144" height="144"></canvas>
+        <div><div>App thinks: <b id="reviewGuess"></b></div>
+          <button class="primary" id="reviewYes">✓ Yes, it is <span id="reviewYesL"></span></button>
+          <button id="reviewNot">✗ Not a letter / bad cut</button>
+        </div>
+      </div>
+      <div class="small">Or choose the right letter:</div>
+      <div id="letterKeys" class="letter-keys"></div>
+    </div>
+    <div class="row"><button id="reviewMore">Show more</button></div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section id="library" class="screen" hidden>
+    <h2>Learning library</h2>
+    <div id="libCounts" class="lib-counts"></div>
+    <h2>The AI model</h2>
+    <div id="modelInfo" class="small"></div>
+    <div class="row wrap">
+      <button id="exportLib">⬇ Export library (for training on PC)</button>
+      <label class="file-btn">⬆ Load trained model<input id="loadModel" type="file" accept=".json,application/json" hidden></label>
+      <button id="removeModel">Remove model</button>
+      <a class="button" href="train.html">🏋 Train here</a>
+    </div>
+    <h2>Business details (for certificates)</h2>
+    <label class="field">Business name <input id="bizName" autocomplete="organization"></label>
+    <label class="field">Sofer's name <input id="bizSofer" autocomplete="name"></label>
+    <label class="field">Phone <input id="bizPhone" type="tel" autocomplete="tel"></label>
+    <label class="field">Address <input id="bizAddress" autocomplete="street-address"></label>
+    <label class="field">Extra line (e.g. certification) <input id="bizExtra"></label>
+    <div class="row"><button id="bizSave" class="primary">Save business details</button></div>
+    <h2>PC sync</h2>
+    <div id="syncInfo" class="small"></div>
+    <label class="field">Pairing code (shown in the PC program window)
+      <input id="pairCode" placeholder="ABCD-1234" autocomplete="off" autocapitalize="characters"></label>
+    <label class="field">PC address <span class="small">(leave empty when the app was opened from the PC)</span>
+      <input id="pcUrl" placeholder="https://my-pc.tail1234.ts.net" inputmode="url" autocomplete="off"></label>
+    <div class="row"><button id="syncSave" class="primary">Save &amp; sync now</button></div>
+    <p class="small">Every check and its sure letters are sent to the PC by themselves – right away, or later when the PC can be reached. The PC trains the AI and sends the better AI back.</p>
+    <h2>Settings</h2>
+    <label>Crack check sensitivity: <b id="sensLbl"></b>
+      <input type="range" id="sens" min="0.1" max="0.45" step="0.05"></label>
+    <p class="small">Higher = more spots marked (more false alarms). Lower = only clear cracks.</p>
+    <details><summary>Danger zone</summary>
+      <button id="clearLib" class="danger">Delete all library letters</button>
+      <button id="clearReview" class="danger">Delete all unsure letters</button>
+    </details>
+  </section>
+
+  <!-- REFERENCE -->
+  <section id="reference" class="screen" hidden>
+    <p>This is the text the app compares against: Devarim 6:4–9 and 11:13–21. The <b>|</b> marks the break between the two parshiyot.
+      Please read it carefully and correct it if needed.</p>
+    <textarea id="refText" dir="rtl" rows="16" spellcheck="false"></textarea>
+    <div id="refStats" class="small"></div>
+    <div class="row"><button id="refReset">Restore original</button><button class="primary" id="refConfirm">✓ I checked this text</button></div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history" class="screen" hidden>
+    <ul id="historyList" class="history"></ul>
+    <canvas id="historyImg" class="history-img" hidden></canvas>
+  </section>
+</main>
+
+<canvas id="work" hidden></canvas>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

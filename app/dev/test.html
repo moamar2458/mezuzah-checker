@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Pipeline test</title>
+<style>body{font-family:sans-serif;margin:8px} canvas{max-width:100%;border:1px solid #999} pre{white-space:pre-wrap;font-size:12px}</style>
+</head><body>
+<h3>Synthetic mezuzah test</h3>
+<pre id="log">running…</pre>
+<canvas id="out"></canvas>
+<script type="module">
+import { loadFonts, synthPage } from '../js/synth.js';
+import { parseReference } from '../js/reference.js';
+import { analyze } from '../js/pipeline.js';
+
+const q = new URLSearchParams(location.search);
+await loadFonts('../');
+const ref = parseReference();
+// 65 = ב in לבבך, 433 = ב in לבבכם (bet has a thick bottom stroke)
+const bets = ref.filter((r) => r.ch === 'ב').map((r) => r.index);
+const defects = { missing: [40, 300], touch: [120, 500], crack: [200, 650], spot: [bets[3], bets[20]], swap: { 24: 'ר' } };
+const page = synthPage(ref, { font: q.get('font') || 'StamAshkenaz', size: Number(q.get('size') || 40), angle: Number(q.get('angle') || 0.02), defects });
+const { canvas } = page;
+const ctx = canvas.getContext('2d');
+const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+const t0 = performance.now();
+let model = null;
+if (q.get('model')) {
+  const db = await import('../js/db.js'); const { deserializeModel } = await import('../js/nn.js');
+  const mj = await db.get('model'); if (mj) model = deserializeModel(mj);
+}
+const res = analyze(id.data, canvas.width, canvas.height, { ref, model });
+const ms = performance.now() - t0;
+const out = document.getElementById('out');
+out.width = res.w; out.height = res.h;
+const octx = out.getContext('2d');
+octx.putImageData(new ImageData(new Uint8ClampedArray(res.rgba), res.w, res.h), 0, 0);
+octx.strokeStyle = 'rgba(0,120,255,.5)';
+for (const b of res.boxes || []) octx.strokeRect(b.b[0], b.b[1], b.b[2] - b.b[0], b.b[3] - b.b[1]);
+octx.strokeStyle = 'red'; octx.lineWidth = 3;
+for (const is of res.issues) { octx.beginPath(); octx.arc(is.x, is.y, is.r, 0, 7); octx.stroke(); }
+const expect = Object.entries(defects).map(([k, v]) => `${k}: ${(Array.isArray(v) ? v : Object.keys(v).map(Number)).map((i) => i + '=' + ref[i].ch + ' in ' + ref[i].wordText).join(', ')}`).join('\n');
+document.getElementById('log').textContent =
+  `time ${ms.toFixed(0)} ms, rows drawn ${page.rows}\nstats ${JSON.stringify(res.stats)}\nquality ${JSON.stringify(res.quality)}\n\nINJECTED:\n${expect}\n\nISSUES (${res.issues.length}):\n` +
+  res.issues.map((i) => `${i.kind} ${i.refIndex ?? ''} ${i.note}`).join('\n');
+window.__res = res;
+// where did the injected defects end up?
+const near = (t) => res.boxes.filter((b) => b.b[0] < t.x1 + 5 && b.b[2] > t.x0 - 5 && Math.abs((b.b[1] + b.b[3]) / 2 - (t.y - 0.3 * Number(q.get('size') || 40))) < 30);
+window.__probe = [...defects.touch, ...defects.crack].map((i) => { const t = page.truth.find((tt) => tt.index === i); return { i, ch: ref[i].ch, t, boxes: t && near(t) }; });
+</script>
+</body></html>
