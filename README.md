@@ -45,6 +45,16 @@ A free, offline phone app that helps a sofer check a mezuzah from a photo.
    Then run `tailscale serve status` in a command window to see your PC's address,
    like `https://my-pc.tail1234.ts.net`.
 
+**On Ubuntu (instead of Windows)**
+1. In a terminal: `cd ~/checker` then `./start-ubuntu.sh` – keep the window open.
+2. It shares the PC privately on Tailscale port **8443** (it never touches other things this PC shares, and is not public).
+   If it says so, run once: `sudo tailscale serve --bg --https=8443 8080`.
+3. The phone's "PC address" is `https://<pc-name>.<tailnet>.ts.net:8443`.
+
+**The app is also online:** https://moamar2458.github.io/mezuzah-checker/ – works on the iPhone even when the PC is off.
+If you use this address, type the PC address in **Library & AI → PC sync**. Use one address only: each address
+keeps its own library on the phone.
+
 **On the iPhone**
 1. Install **Tailscale** from the App Store and sign in with the **same** account. Turn it on.
 2. In Safari open your PC's address (`https://my-pc.tail1234.ts.net`).
