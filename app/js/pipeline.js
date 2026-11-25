@@ -6,8 +6,9 @@ import { normalizeMask, maskFromLabels, viewCrop, toBytes } from './crop.js';
 import { predict } from './nn.js';
 import { LETTERS, LETTER_INDEX, LETTER_NAMES } from './reference.js';
 import { median } from './imageproc.js';
+import { T } from './i18n.js';
 
-const name = (ch) => `${ch} (${LETTER_NAMES[ch]})`;
+const name = (ch) => T(`${ch} (${LETTER_NAMES[ch]})`, ch);
 
 /** 16x16 summary of a 32x32 letter (0..255). */
 export function fingerprint(x) {
@@ -36,10 +37,10 @@ export function photoQuality(seg) {
   }
   const blurRatio = ink ? mid / ink : 0;
   const mean = sum / gray.d.length;
-  if (mean < 70) warnings.push({ kind: 'dark', note: 'Photo is dark. Add light (no direct flash glare) and take it again.' });
-  if (blurRatio > 0.9) warnings.push({ kind: 'blur', note: 'Photo looks blurry. Hold the phone still, tap to focus, and take it again.' });
+  if (mean < 70) warnings.push({ kind: 'dark', note: T('Photo is dark. Add light (no direct flash glare) and take it again.', 'התמונה חשוכה. הוסף אור (בלי ברק ישיר של פלאש) וצלם שוב.') });
+  if (blurRatio > 0.9) warnings.push({ kind: 'blur', note: T('Photo looks blurry. Hold the phone still, tap to focus, and take it again.', 'התמונה מטושטשת. החזק את הטלפון יציב, גע במסך למיקוד וצלם שוב.') });
   const deg = (seg.angle * 180) / Math.PI;
-  if (Math.abs(deg) > 3) warnings.push({ kind: 'turn', note: `The klaf was turned ${deg.toFixed(1)}°. The app straightened it, but a straight photo is better.` });
+  if (Math.abs(deg) > 3) warnings.push({ kind: 'turn', note: T(`The klaf was turned ${deg.toFixed(1)}°. The app straightened it, but a straight photo is better.`, `הקלף היה מסובב ${deg.toFixed(1)}°. האפליקציה יישרה אותו, אבל עדיף לצלם ישר.`) });
   if (seg.lines && seg.lines.length >= 6) {
     const hs = seg.lines.map((L) => median(L.letters.map((g) => g.lineBot - g.lineTop)));
     const k = Math.max(2, Math.floor(hs.length / 4));
@@ -49,10 +50,10 @@ export function photoQuality(seg) {
     for (const g of seg.letters) (g.x1 < midX ? lefts : rights).push(g.lineBot - g.lineTop);
     const lr = median(lefts) / Math.max(1, median(rights));
     if (top / bot > 1.12 || bot / top > 1.12 || lr > 1.12 || lr < 1 / 1.12) {
-      warnings.push({ kind: 'tilt', note: 'The phone was tilted (letters are bigger on one side). Hold the phone flat, straight above the klaf.' });
+      warnings.push({ kind: 'tilt', note: T('The phone was tilted (letters are bigger on one side). Hold the phone flat, straight above the klaf.', 'הטלפון היה נטוי (האותיות גדולות יותר בצד אחד). החזק את הטלפון שטוח, ישר מעל הקלף.') });
     }
   }
-  if (seg.H < 18) warnings.push({ kind: 'small', note: 'Letters are small in the photo. Move the phone closer so the klaf fills the screen.' });
+  if (seg.H < 18) warnings.push({ kind: 'small', note: T('Letters are small in the photo. Move the phone closer so the klaf fills the screen.', 'האותיות קטנות בתמונה. קרב את הטלפון כך שהקלף ימלא את המסך.') });
   return { warnings, blurRatio, brightness: mean, angleDeg: deg, letterHeightPx: seg.H };
 }
 
@@ -64,7 +65,7 @@ export function analyze(rgba, w, h, opts) {
   const { ref, sens = 0.15 } = opts;
   const seg = segment(rgba, w, h);
   if (!seg.ok) {
-    return { ok: false, rgba: seg.rgba, w, h, issues: [], quality: { warnings: [{ kind: 'notext', note: 'Could not find the letters. Make sure the whole klaf is in the photo, sharp and well lit.' }] } };
+    return { ok: false, rgba: seg.rgba, w, h, issues: [], quality: { warnings: [{ kind: 'notext', note: T('Could not find the letters. Make sure the whole klaf is in the photo, sharp and well lit.', 'לא נמצאו האותיות. ודא שכל הקלף בתמונה, חד ומואר היטב.') }] } };
   }
   const quality = photoQuality(seg);
   // An AI that has only seen font letters is wrong on real handwriting, so it is used
@@ -72,10 +73,10 @@ export function analyze(rgba, w, h, opts) {
   let model = opts.model || null;
   if (model && !modelTrusted(model) && !opts.forceModel) {
     const m = model.meta || {};
-    quality.warnings.push({ kind: 'model', note: `The AI model was not used: it has learned from ${m.realSamples || 0} real letters (it needs ${MIN_REAL} real letters, tested at least ${MIN_ACC * 100}% correct). Until then the check uses the known text and letter shapes, and "wrong letter" cannot be detected.` });
+    quality.warnings.push({ kind: 'model', note: T(`The AI model was not used: it has learned from ${m.realSamples || 0} real letters (it needs ${MIN_REAL} real letters, tested at least ${MIN_ACC * 100}% correct). Until then the check uses the known text and letter shapes, and "wrong letter" cannot be detected.`, `מודל הבינה לא שימש: הוא למד מ־${m.realSamples || 0} אותיות אמיתיות (צריך ${MIN_REAL} אותיות אמיתיות ולפחות ${MIN_ACC * 100}% נכון בבדיקה). עד אז הבדיקה משתמשת בנוסח הידוע ובצורות האותיות, ואי אפשר לזהות "אות שגויה".`) });
     model = null;
   }
-  if (!opts.model) quality.warnings.push({ kind: 'model', note: 'No AI model yet: the check uses the known text and letter shapes. A wrong letter (for example ד written as ר) cannot be detected until the AI has learned from your mezuzot.' });
+  if (!opts.model) quality.warnings.push({ kind: 'model', note: T('No AI model yet: the check uses the known text and letter shapes. A wrong letter (for example ד written as ר) cannot be detected until the AI has learned from your mezuzot.', 'אין עדיין מודל בינה: הבדיקה משתמשת בנוסח הידוע ובצורות האותיות. אות שגויה (למשל ד שנכתבה כמו ר) לא תזוהה עד שהבינה תלמד מהמזוזות שלך.') });
   const { letters, W, H, A } = seg;
 
   // 1. cut out each letter, ask the AI (if there is one)
@@ -123,21 +124,21 @@ export function analyze(rgba, w, h, opts) {
       else if (next) { x = next.x1 + W * 0.6; y = (next.lineTop + next.lineBot) / 2; }
       else { x = w / 2; y = h / 2; }
       if (prev) bump(prev.line);
-      add(x, y, W * 0.8, `Missing letter? Expected ${name(ref[s.j[0]].ch)} in the word ${word(s.j[0])}`, 'missing', { refIndex: s.j[0] });
+      add(x, y, W * 0.8, T(`Missing letter? Expected ${name(ref[s.j[0]].ch)} in the word ${word(s.j[0])}`, `אות חסרה? צריכה להיות ${name(ref[s.j[0]].ch)} במילה ${word(s.j[0])}`), 'missing', { refIndex: s.j[0] });
     } else if (s.op === 'I') {
       const g = letters[s.i[0]];
       const [x, y, r] = center(g);
-      add(x, y, r, g.tiny ? 'Extra small mark (ink spot?) - check' : 'Extra letter or mark that is not in the text - check', 'extra');
+      add(x, y, r, g.tiny ? T('Extra small mark (ink spot?) - check', 'סימן קטן עודף (כתם דיו?) - לבדוק') : T('Extra letter or mark that is not in the text - check', 'אות או סימן עודף שאינו בנוסח - לבדוק'), 'extra');
     } else if (s.op === 'T') {
       const g = letters[s.i[0]];
       const [x, y, r] = center(g);
       const chs = s.j.map((j) => ref[j].ch);
       const a = chs.slice(0, -1).join(', '), b = chs[chs.length - 1];
-      add(x, y, r, `Letters ${a} and ${b} seem to touch or are very close (word ${word(s.j[0])}) - check`, 'touch', { refIndex: s.j[0] });
+      add(x, y, r, T(`Letters ${a} and ${b} seem to touch or are very close (word ${word(s.j[0])}) - check`, `האותיות ${a} ו־${b} נראות נוגעות או קרובות מאוד (מילה ${word(s.j[0])}) - לבדוק`), 'touch', { refIndex: s.j[0] });
     } else if (s.op === 'B') {
       const [g1, g2] = s.i.map((i) => letters[i]);
       const x = (Math.min(g1.x0, g2.x0) + Math.max(g1.x1, g2.x1)) / 2, y = (Math.min(g1.y0, g2.y0) + Math.max(g1.y1, g2.y1)) / 2;
-      add(x, y, Math.max(g1.x1, g2.x1) - Math.min(g1.x0, g2.x0), `Letter ${name(ref[s.j[0]].ch)} seems broken into two pieces (word ${word(s.j[0])}) - check`, 'broken', { refIndex: s.j[0] });
+      add(x, y, Math.max(g1.x1, g2.x1) - Math.min(g1.x0, g2.x0), T(`Letter ${name(ref[s.j[0]].ch)} seems broken into two pieces (word ${word(s.j[0])}) - check`, `האות ${name(ref[s.j[0]].ch)} נראית שבורה לשני חלקים (מילה ${word(s.j[0])}) - לבדוק`), 'broken', { refIndex: s.j[0] });
     } else if (s.op === 'M') {
       const g = letters[s.i[0]], r = ref[s.j[0]];
       const [x, y, rr] = center(g);
@@ -147,13 +148,13 @@ export function analyze(rgba, w, h, opts) {
         const knows = (c) => !cc || cc[c] >= 30; // only judge shapes the AI has seen often in real mezuzot
         if (LETTERS[top] !== r.ch && g.probs[top] > 0.75 && g.probs[LETTER_INDEX[r.ch]] < 0.15 && knows(top) && knows(LETTER_INDEX[r.ch])) {
           g.wrong = true;
-          add(x, y, rr, `Looks like ${name(LETTERS[top])}, but the text has ${name(r.ch)} (word ${r.wordText}) - check`, 'wrong', { refIndex: r.index });
+          add(x, y, rr, T(`Looks like ${name(LETTERS[top])}, but the text has ${name(r.ch)} (word ${r.wordText}) - check`, `נראית כמו ${name(LETTERS[top])}, אבל בנוסח ${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'wrong', { refIndex: r.index });
         }
       } else if (s.score < -3) {
-        add(x, y, rr, `Shape looks unusual for ${name(r.ch)} (word ${r.wordText}) - check`, 'shape', { refIndex: r.index });
+        add(x, y, rr, T(`Shape looks unusual for ${name(r.ch)} (word ${r.wordText}) - check`, `צורה לא רגילה ל־${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'shape', { refIndex: r.index });
       }
-      if (r.wordStart && !g.wordStart && g.gapBefore !== undefined && g.gapBefore < 0.5 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, `Space between words looks too small before ${r.wordText} - check`, 'space');
-      if (!r.wordStart && g.wordStart && g.gapBefore !== undefined && g.gapBefore > 1.3 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, `Big space inside the word ${r.wordText} - check`, 'space');
+      if (r.wordStart && !g.wordStart && g.gapBefore !== undefined && g.gapBefore < 0.5 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Space between words looks too small before ${r.wordText} - check`, `הרווח בין המילים נראה קטן מדי לפני ${r.wordText} - לבדוק`), 'space');
+      if (!r.wordStart && g.wordStart && g.gapBefore !== undefined && g.gapBefore > 1.3 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Big space inside the word ${r.wordText} - check`, `רווח גדול בתוך המילה ${r.wordText} - לבדוק`), 'space');
     }
   });
 
@@ -165,9 +166,9 @@ export function analyze(rgba, w, h, opts) {
     const res = inspectLetter(seg, g, ch, sens);
     g.spots = res.spots;
     inspected++; if (res.strokeW < 6) lowRes++;
-    for (const sp of res.spots) add(sp.x, sp.y, H * 0.35, sp.note + (g.op === 'M' ? ` (${ch}, word ${ref[g.ref].wordText})` : ''), sp.kind);
+    for (const sp of res.spots) add(sp.x, sp.y, H * 0.35, sp.note + (g.op === 'M' ? T(` (${ch}, word ${ref[g.ref].wordText})`, ` (${ch}, מילה ${ref[g.ref].wordText})`) : ''), sp.kind);
   }
-  if (lowRes > inspected * 0.5) quality.warnings.push({ kind: 'lowres', note: 'Some strokes are too thin in the photo to check for cracks. Move closer or take the klaf in two halves.' });
+  if (lowRes > inspected * 0.5) quality.warnings.push({ kind: 'lowres', note: T('Some strokes are too thin in the photo to check for cracks. Move closer or take the klaf in two halves.', 'חלק מהקווים דקים מדי בתמונה לבדיקת סדקים. התקרב או צלם את הקלף בשני חצאים.') });
 
   // 4. decide which letters are sure enough to teach the AI
   const wordOk = new Map();

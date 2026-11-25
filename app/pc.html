@@ -34,7 +34,7 @@
   <section id="pair" hidden>
     <h2>Enter the pairing code</h2>
     <p class="small">It is shown in the black PC program window.</p>
-    <label class="field">Pairing code <input id="code" placeholder="ABCD-1234" autocomplete="off"></label>
+    <label class="field">Pairing code <input id="code" dir="ltr" placeholder="ABCD-1234" autocomplete="off"></label>
     <button class="primary" id="codeBtn">Open</button> <span id="codeMsg" class="small"></span>
   </section>
 
@@ -64,7 +64,7 @@
       <div id="libInfo" class="small"></div>
       <div id="libCounts" class="lib-counts"></div>
       <h2>People sharing letters</h2>
-      <p class="small">Each helper gets their own pairing code. A helper's phone sends <b>only letter images</b> (no photos, customers or results) and gets the shared AI back. Helpers reach this PC through Tailscale sharing – see README.</p>
+      <p class="small" data-he="לכל עוזר יש קוד צימוד משלו. הטלפון של העוזר שולח <b>רק תמונות של אותיות</b> (בלי תמונות, לקוחות או תוצאות) ומקבל בחזרה את הבינה המשותפת. עוזרים מגיעים למחשב הזה דרך שיתוף ב-Tailscale – ראה README.">Each helper gets their own pairing code. A helper's phone sends <b>only letter images</b> (no photos, customers or results) and gets the shared AI back. Helpers reach this PC through Tailscale sharing – see README.</p>
       <table class="cust-table"><thead><tr><th>Name</th><th>Pairing code</th><th>Letters</th><th>Hold for my approval</th><th></th></tr></thead><tbody id="usersBody"></tbody></table>
       <div class="row" style="max-width:520px"><input id="helperName" class="grow" placeholder="Helper's name"><button id="addHelper">+ Add helper</button></div>
       <div id="pendBox"></div>

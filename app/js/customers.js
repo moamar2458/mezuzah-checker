@@ -1,6 +1,7 @@
 // Customer record: customers, their items (each mezuzah), and when each is due to be checked again.
 // Every change gets a time stamp, so phone and PC can merge their copies (newest wins).
 import * as db from './db.js';
+import { T, dateStr } from './i18n.js';
 
 export const DEFAULT_MONTHS = 42; // twice in seven years
 
@@ -94,9 +95,9 @@ export function calendarFile(entries) {
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${icsDate(due)}`,
     `DTEND;VALUE=DATE:${icsDate(due + 864e5)}`,
-    `SUMMARY:${icsText(`Check ${item.kind === 'mezuzah' ? 'mezuzah' : item.kind}: ${customer.name} – ${item.name}`)}`,
-    `DESCRIPTION:${icsText(`Last checked ${new Date(item.lastCheck).toLocaleDateString()}.${customer.phone ? ` Phone: ${customer.phone}` : ''}${customer.address ? ` Address: ${customer.address}` : ''}`)}`,
-    'BEGIN:VALARM', 'TRIGGER:-P7D', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(`Mezuzah check due: ${customer.name}`)}`, 'END:VALARM',
+    `SUMMARY:${icsText(T(`Check ${item.kind === 'mezuzah' ? 'mezuzah' : item.kind}: ${customer.name} – ${item.name}`, `בדיקת מזוזה: ${customer.name} – ${item.name}`))}`,
+    `DESCRIPTION:${icsText(T(`Last checked ${new Date(item.lastCheck).toLocaleDateString()}.${customer.phone ? ` Phone: ${customer.phone}` : ''}${customer.address ? ` Address: ${customer.address}` : ''}`, `נבדקה לאחרונה ${dateStr(item.lastCheck)}.${customer.phone ? ` טלפון: ${customer.phone}` : ''}${customer.address ? ` כתובת: ${customer.address}` : ''}`))}`,
+    'BEGIN:VALARM', 'TRIGGER:-P7D', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(T(`Mezuzah check due: ${customer.name}`, `הגיע זמן בדיקת מזוזה: ${customer.name}`))}`, 'END:VALARM',
     'END:VEVENT',
   ].join('\r\n'));
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mezuzah Checker//EN', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n') + '\r\n';

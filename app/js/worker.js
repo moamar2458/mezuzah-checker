@@ -2,11 +2,13 @@
 import { analyze } from './pipeline.js';
 import { parseReference } from './reference.js';
 import { deserializeModel } from './nn.js';
+import { setLang } from './i18n.js';
 
 let model = null, modelKey = null;
 
 self.onmessage = (e) => {
-  const { id, rgba, w, h, refText, modelJson, sens } = e.data;
+  const { id, rgba, w, h, refText, modelJson, sens, lang } = e.data;
+  setLang(lang);
   try {
     if (modelJson && modelJson !== modelKey) { model = deserializeModel(modelJson); modelKey = modelJson; }
     if (!modelJson) { model = null; modelKey = null; }

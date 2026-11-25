@@ -4,6 +4,7 @@
 //  2. uniform: every instance of the same letter looks almost exactly the same (print), where a scribe's
 //              hand always varies a little.
 // It only warns; the sofer decides.
+import { T, dateStr } from './i18n.js';
 
 function corr(a, b) {
   let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0; const n = a.length;
@@ -59,12 +60,12 @@ export function printedCheck(scan, others, ref) {
     const o = best.other;
     out.push({
       kind: 'copy', score: best.score, other: { uid: o.uid, date: o.date, customerName: o.customerName, itemName: o.itemName },
-      note: `Possible printed copy: this mezuzah is almost identical (${Math.round(best.score * 100)}%) to the one checked ${new Date(o.date).toLocaleDateString()}${o.customerName ? ` for ${o.customerName} – ${o.itemName}` : ''}. Two handwritten mezuzot are never this alike – unless it is the same mezuzah photographed again. Check that it is handwritten.`,
+      note: T(`Possible printed copy: this mezuzah is almost identical (${Math.round(best.score * 100)}%) to the one checked ${dateStr(o.date)}${o.customerName ? ` for ${o.customerName} – ${o.itemName}` : ''}. Two handwritten mezuzot are never this alike – unless it is the same mezuzah photographed again. Check that it is handwritten.`, `ייתכן העתק מודפס: המזוזה הזאת כמעט זהה (${Math.round(best.score * 100)}%) לזו שנבדקה ב־${dateStr(o.date)}${o.customerName ? ` עבור ${o.customerName} – ${o.itemName}` : ''}. שתי מזוזות בכתב יד אף פעם לא דומות כל כך – אלא אם זו אותה מזוזה שצולמה שוב. יש לבדוק שהיא כתובה ביד.`),
     });
   }
   const u = uniformity(scan.letters || [], ref);
   if (u !== null && u >= UNIFORM_LIMIT) {
-    out.push({ kind: 'uniform', score: u, note: `Possible print: repeated letters look almost exactly the same (${Math.round(u * 100)}%), which is unusual for handwriting. Check that it is handwritten.` });
+    out.push({ kind: 'uniform', score: u, note: T(`Possible print: repeated letters look almost exactly the same (${Math.round(u * 100)}%), which is unusual for handwriting. Check that it is handwritten.`, `ייתכן הדפסה: אותיות חוזרות נראות כמעט זהות לגמרי (${Math.round(u * 100)}%), דבר לא רגיל בכתב יד. יש לבדוק שהיא כתובה ביד.`) });
   }
   return { warnings: out, bestCopy: best ? best.score : null, uniformity: u };
 }

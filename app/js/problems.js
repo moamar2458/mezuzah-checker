@@ -2,6 +2,7 @@
 // white spots / cracks in the ink, very thin places, closed shapes, extra pieces.
 import { distanceTransform, skeletonize, median } from './imageproc.js';
 import { maskFromLabels } from './crop.js';
+import { T } from './i18n.js';
 
 const EXPECTED_PARTS = { 'ה': 2, 'ק': 2 };
 const HAS_HOLE = new Set(['ם', 'ס', 'ט']);
@@ -51,7 +52,7 @@ export function inspectLetter(seg, g, ch, sens = 0.15) {
     const big = hole.area > 0.06 * w * h;
     out.push({
       kind: big ? 'closed' : 'hole', x: box.x0 + hole.x, y: box.y0 + hole.y,
-      note: big ? 'Shape looks closed here - check that the letter is not closed' : 'White spot inside the ink - check for a crack or missing ink',
+      note: big ? T('Shape looks closed here - check that the letter is not closed', 'הצורה נראית סגורה כאן - לבדוק שהאות לא סגורה') : T('White spot inside the ink - check for a crack or missing ink', 'נקודה לבנה בתוך הדיו - לבדוק סדק או חסר דיו'),
     });
   });
 
@@ -112,21 +113,21 @@ export function inspectLetter(seg, g, ch, sens = 0.15) {
       if (s) { s.n++; } else spots.push({ x, y, n: 1 });
     }
     for (const s of spots.slice(0, 2)) {
-      out.push({ kind: 'thin', x: box.x0 + s.x, y: box.y0 + s.y, note: 'Ink is very thin here - check for a crack or break' });
+      out.push({ kind: 'thin', x: box.x0 + s.x, y: box.y0 + s.y, note: T('Ink is very thin here - check for a crack or break', 'הדיו דק מאוד כאן - לבדוק סדק או שבר') });
     }
   }
 
   // ch can be several letters when they are joined in one blob
   const expParts = ch ? [...ch].reduce((n, c) => n + (EXPECTED_PARTS[c] || 1), 0) : 1;
   if (g.parts > expParts) {
-    out.push({ kind: 'pieces', x: (g.x0 + g.x1) / 2, y: (g.y0 + g.y1) / 2, note: `Letter is made of ${g.parts} separate pieces - check for a break` });
+    out.push({ kind: 'pieces', x: (g.x0 + g.x1) / 2, y: (g.y0 + g.y1) / 2, note: T(`Letter is made of ${g.parts} separate pieces - check for a break`, `האות בנויה מ־${g.parts} חלקים נפרדים - לבדוק שבר`) });
   }
   if (ch === 'ה' || ch === 'ק') {
-    if (g.parts < 2) out.push({ kind: 'leg', x: g.x0 + (g.x1 - g.x0) * 0.2, y: (g.y0 + g.y1) / 2, note: `The left leg of ${ch} seems to touch the roof - check` });
+    if (g.parts < 2) out.push({ kind: 'leg', x: g.x0 + (g.x1 - g.x0) * 0.2, y: (g.y0 + g.y1) / 2, note: T(`The left leg of ${ch} seems to touch the roof - check`, `הרגל השמאלית של ${ch} נראית נוגעת בגג - לבדוק`) });
   }
   if (g.bridge) {
     const at = g.bridgeAt || { x: (g.x0 + g.x1) / 2, y: g.y1 };
-    out.push({ kind: 'bridge', x: at.x, y: at.y, note: 'Letter seems to touch a letter (or crown) in the next line' });
+    out.push({ kind: 'bridge', x: at.x, y: at.y, note: T('Letter seems to touch a letter (or crown) in the next line', 'האות נראית נוגעת באות (או בתג) בשורה הבאה') });
   }
   return { spots: out, strokeW, ink };
 }

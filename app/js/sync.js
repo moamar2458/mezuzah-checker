@@ -3,6 +3,7 @@
 import * as db from './db.js';
 import { u8ToB64 } from './library.js';
 import { mergeRecords } from './customers.js';
+import { T } from './i18n.js';
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^a-zA-Z0-9-]/g, '');
 export const newUid = uid;
@@ -62,8 +63,8 @@ async function call(base, s, path, opts = {}) {
   const t = setTimeout(() => ctrl.abort(), opts.timeout || 20000);
   try {
     const res = await fetch(base + path, { ...opts, signal: ctrl.signal, headers: { 'x-pair-code': s.code, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
-    if (res.status === 401) throw Object.assign(new Error('The pairing code is wrong'), { auth: true });
-    if (!res.ok) throw new Error(`PC answered ${res.status}`);
+    if (res.status === 401) throw Object.assign(new Error(T('The pairing code is wrong', 'קוד הצימוד שגוי')), { auth: true });
+    if (!res.ok) throw new Error(T(`PC answered ${res.status}`, `המחשב ענה ${res.status}`));
     return res;
   } finally { clearTimeout(t); }
 }
@@ -79,7 +80,7 @@ async function doSync() {
     role = ping.role || 'owner';
     if (role !== s.role) await saveSettings({ role, userName: ping.name || '' });
   } catch (e) {
-    const r = { state: e.auth ? 'error' : 'offline', waiting, message: e.auth ? e.message : 'PC not reachable' };
+    const r = { state: e.auth ? 'error' : 'offline', waiting, message: e.auth ? e.message : T('PC not reachable', 'המחשב לא זמין') };
     await db.set('syncStatus', { ...r, at: Date.now() });
     return r;
   }

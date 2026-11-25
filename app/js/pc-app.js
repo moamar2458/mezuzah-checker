@@ -3,6 +3,9 @@ import { LETTERS } from './reference.js';
 import { paintIssues } from './report.js';
 import { nextDue, dueState, calendarFile } from './customers.js';
 import { VERDICTS, certificateHTML, CERT_CSS, printCertificate } from './certificate.js';
+import { T, dateStr, dateTimeStr, translatePage } from './i18n.js';
+import { HE_PC } from './lang-he.js';
+translatePage(HE_PC);
 { const st = document.createElement('style'); st.textContent = CERT_CSS; document.head.appendChild(st); }
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +28,7 @@ async function start() {
 $('codeBtn').onclick = async () => {
   code = $('code').value.trim().toUpperCase();
   try { await api('/api/ping'); try { localStorage.setItem('pairCode', code); } catch { /* ignore */ } start(); }
-  catch { $('codeMsg').textContent = 'That code is not right.'; }
+  catch { $('codeMsg').textContent = T('That code is not right.', 'הקוד לא נכון.'); }
 };
 
 // ---------- tabs ----------
@@ -46,13 +49,13 @@ async function loadCustomers() {
   const due = items.map((item) => ({ item, customer: cs.get(item.customerUid), due: nextDue(item), state: dueState(item) }))
     .filter((d) => d.state === 'overdue' || d.state === 'soon').sort((a, b) => a.due - b.due);
   const box = $('pcDue');
-  box.innerHTML = due.length ? '<h2>Due for a check (next 30 days)</h2><table class="cust-table"><tbody id="pcDueBody"></tbody></table><div class="row" style="max-width:420px"><button id="pcCal">📅 Download calendar reminders</button></div>' : '<p class="small">Nothing is due in the next 30 days.</p>';
+  box.innerHTML = due.length ? `<h2>${T('Due for a check (next 30 days)', 'הגיע זמן בדיקה (30 הימים הקרובים)')}</h2><table class="cust-table"><tbody id="pcDueBody"></tbody></table><div class="row" style="max-width:420px"><button id="pcCal">📅 ${T('Download calendar reminders', 'הורד תזכורות ליומן')}</button></div>` : `<p class="small">${T('Nothing is due in the next 30 days.', 'אין בדיקות ב־30 הימים הקרובים.')}</p>`;
   for (const d of due) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td><td></td><td></td>';
     tr.children[0].textContent = d.customer.name; tr.children[1].textContent = d.customer.phone || '';
     tr.children[2].textContent = d.item.name;
-    tr.children[3].textContent = `${d.state === 'overdue' ? 'overdue since' : 'due'} ${new Date(d.due).toLocaleDateString()}`;
+    tr.children[3].textContent = `${d.state === 'overdue' ? T('overdue since', 'באיחור מאז') : T('due', 'מועד')} ${dateStr(d.due)}`;
     tr.children[3].className = `due-${d.state}`;
     $('pcDueBody').appendChild(tr);
   }
@@ -71,9 +74,9 @@ async function loadCustomers() {
       if (k === 0) { tr.children[0].textContent = c.name; tr.children[1].textContent = c.phone || ''; }
       if (it) {
         tr.children[2].textContent = it.name;
-        tr.children[3].textContent = it.lastCheck ? new Date(it.lastCheck).toLocaleDateString() : '—';
+        tr.children[3].textContent = it.lastCheck ? dateStr(it.lastCheck) : '—';
         const nd = nextDue(it);
-        tr.children[4].textContent = nd ? new Date(nd).toLocaleDateString() : '—';
+        tr.children[4].textContent = nd ? dateStr(nd) : '—';
         tr.children[4].className = `due-${dueState(it)}`;
       }
       body.appendChild(tr);
@@ -89,15 +92,15 @@ async function loadChecks() {
   const key = list.map((s) => s.uid).join();
   if (key === shown) return;
   shown = key;
-  $('scanCount').textContent = `${list.length} checks`;
+  $('scanCount').textContent = T(`${list.length} checks`, `${list.length} בדיקות`);
   const ul = $('scanList'); ul.innerHTML = '';
   for (const s of list) {
     const li = document.createElement('li');
     const st = s.stats;
     li.innerHTML = `<div><b></b></div><div class="meta"></div>`;
-    li.querySelector('b').textContent = `${s.printed ? '🖨 ' : ''}${s.customerName ? `${s.customerName} – ${s.itemName}` : new Date(s.date).toLocaleString()}`;
+    li.querySelector('b').textContent = `${s.printed ? '🖨 ' : ''}${s.customerName ? `${s.customerName} – ${s.itemName}` : dateTimeStr(s.date)}`;
     const vv = s.verdict && VERDICTS.find((x) => x.id === s.verdict);
-    li.querySelector('.meta').textContent = `${vv ? `${vv.en} · ` : ''}${s.customerName ? new Date(s.date).toLocaleString() + ' · ' : ''}${s.mode === 'learn' ? 'learn' : 'check'} · ${st ? `${st.matched}/${st.expected} letters · ${s.nIssues} places to check` : 'no letters found'} · ${s.device || ''}`;
+    li.querySelector('.meta').textContent = `${vv ? `${T(vv.en, vv.he)} · ` : ''}${s.customerName ? dateTimeStr(s.date) + ' · ' : ''}${s.mode === 'learn' ? T('learn', 'למידה') : T('check', 'בדיקה')} · ${st ? T(`${st.matched}/${st.expected} letters · ${s.nIssues} places to check`, `${st.matched}/${st.expected} אותיות · ${s.nIssues} מקומות לבדיקה`) : T('no letters found', 'לא נמצאו אותיות')} · ${s.device || ''}`;
     li.classList.toggle('sel', s.uid === selected);
     li.onclick = () => openCheck(s.uid);
     ul.appendChild(li);
@@ -115,8 +118,8 @@ async function openCheck(uid) {
   v.innerHTML = `
     <div id="q"></div>
     <div id="res" class="for-line"></div>
-    <div class="zoom-bar"><button id="zo">−</button><span id="zl">100%</span><button id="zi">+</button></div>
-    <div class="canvas-wrap" id="wrap"><canvas id="cv"></canvas></div>
+    <div class="zoom-bar" dir="ltr"><button id="zo">−</button><span id="zl">100%</span><button id="zi">+</button></div>
+    <div class="canvas-wrap" id="wrap" dir="ltr"><canvas id="cv"></canvas></div>
     <ol class="issues issues-pc" id="il"></ol>`;
   // printed-copy warnings: the PC's (compared with every check on the PC) or else the phone's
   const pw = (meta.printWarningsPC && meta.printWarningsPC.length ? meta.printWarningsPC : meta.printWarnings) || [];
@@ -135,16 +138,16 @@ async function openCheck(uid) {
   $('res').innerHTML = '';
   if (verdict) {
     const t = document.createElement('span');
-    t.textContent = `Sofer's result: ${verdict.he} · ${verdict.en}${meta.result.notes ? ` – ${meta.result.notes}` : ''}  `;
-    const b = document.createElement('button'); b.textContent = '🖨 Print certificate';
+    t.textContent = `${T("Sofer's result", 'תוצאת הסופר')}: ${verdict.he} · ${verdict.en}${meta.result.notes ? ` – ${meta.result.notes}` : ''}  `;
+    const b = document.createElement('button'); b.textContent = T('🖨 Print certificate', '🖨 הדפס תעודה');
     b.onclick = () => printCertificate(certificateHTML({
       business: meta.result.business || {}, customerName: meta.customerName, itemName: meta.itemName, date: meta.date,
       verdict: meta.result.verdict, notes: meta.result.notes, number: meta.uid.slice(0, 8).toUpperCase(),
     }));
     $('res').append(t, b);
-  } else $('res').textContent = meta.mode === 'check' ? 'No result saved by the sofer yet.' : '';
+  } else $('res').textContent = meta.mode === 'check' ? T('No result saved by the sofer yet.', 'הסופר עוד לא שמר תוצאה.') : '';
   const il = $('il');
-  if (!(meta.issues || []).length) il.innerHTML = '<li>No places were marked. The sofer should still check the whole mezuzah.</li>';
+  if (!(meta.issues || []).length) il.innerHTML = `<li>${T('No places were marked. The sofer should still check the whole mezuzah.', 'לא סומנו מקומות. הסופר צריך בכל זאת לבדוק את כל המזוזה.')}</li>`;
   (meta.issues || []).forEach((is, k) => {
     const li = document.createElement('li');
     li.innerHTML = `<span class="num">${k + 1}</span><span></span>`;
@@ -166,14 +169,14 @@ let poll = null;
 async function loadLib() {
   loadUsers();
   const st = await (await api('/api/library/stats')).json();
-  $('libInfo').textContent = `${st.total} sure letters from real mezuzot. The AI trains by itself after ${st.autoMin} letters, and again every ${st.autoEvery} new letters (${st.sinceTrain} new since the last training).`;
+  $('libInfo').textContent = T(`${st.total} sure letters from real mezuzot. The AI trains by itself after ${st.autoMin} letters, and again every ${st.autoEvery} new letters (${st.sinceTrain} new since the last training).`, `${st.total} אותיות בטוחות ממזוזות אמיתיות. הבינה מתאמנת לבד אחרי ${st.autoMin} אותיות, ושוב כל ${st.autoEvery} אותיות חדשות (${st.sinceTrain} חדשות מאז האימון האחרון).`);
   $('libCounts').innerHTML = LETTERS.map((L) => `<div class="${st.counts[L] < 30 ? 'low' : ''}"><b>${L}</b>${st.counts[L]}</div>`).join('');
   const m = await (await api('/api/model/meta')).json();
   $('modelInfo').textContent = m.version
-    ? `Current AI: trained ${new Date(m.meta.trained).toLocaleString()} on ${m.meta.realSamples} real letters, ${(m.meta.valAcc * 100).toFixed(1)}% correct on real test letters. ${m.trusted ? 'Phones use it.' : ''}`
-    : 'No AI has been published yet. The phone checks with the known text and letter shapes until then.';
+    ? T(`Current AI: trained ${dateTimeStr(m.meta.trained)} on ${m.meta.realSamples} real letters, ${(m.meta.valAcc * 100).toFixed(1)}% correct on real test letters. ${m.trusted ? 'Phones use it.' : ''}`, `הבינה הנוכחית: אומנה ${dateTimeStr(m.meta.trained)} על ${m.meta.realSamples} אותיות אמיתיות, ${(m.meta.valAcc * 100).toFixed(1)}% נכון על אותיות בדיקה אמיתיות. ${m.trusted ? 'הטלפונים משתמשים בה.' : ''}`)
+    : T('No AI has been published yet. The phone checks with the known text and letter shapes until then.', 'עוד לא פורסמה בינה. עד אז הטלפון בודק לפי הנוסח הידוע וצורות האותיות.');
   const t = await (await api('/api/train/status')).json();
-  $('trainLog').textContent = t.log.join('\n') || 'No training yet.';
+  $('trainLog').textContent = t.log.join('\n') || T('No training yet.', 'עוד לא היה אימון.');
   $('trainBtn').disabled = !!t.running;
   $('trainProg').hidden = !t.running;
   if (t.running) $('trainProg').value = t.running.progress || 0;
@@ -188,15 +191,15 @@ async function loadUsers() {
   for (const u of users) {
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td><code></code></td><td></td><td></td><td></td>';
-    tr.children[0].textContent = u.name;
+    tr.children[0].textContent = u.name === 'Me (owner)' ? T(u.name, 'אני (בעלים)') : u.name;
     tr.querySelector('code').textContent = u.code;
-    tr.children[2].textContent = `${u.letters}${u.pending ? ` (+${u.pending} waiting)` : ''}`;
+    tr.children[2].textContent = `${u.letters}${u.pending ? T(` (+${u.pending} waiting)`, ` (+${u.pending} ממתינות)`) : ''}`;
     if (u.role === 'helper') {
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !u.trusted;
       cb.onchange = async () => { await api(`/api/users/${u.id}`, { method: 'POST', body: JSON.stringify({ trusted: !cb.checked }) }); loadUsers(); };
       tr.children[3].appendChild(cb);
-      const rm = document.createElement('button'); rm.textContent = 'Remove'; rm.className = 'danger';
-      rm.onclick = async () => { if (!confirm(`Remove ${u.name}? Their pairing code stops working. Letters already in the library stay.`)) return; await api(`/api/users/${u.id}`, { method: 'POST', body: JSON.stringify({ remove: true }) }); loadUsers(); };
+      const rm = document.createElement('button'); rm.textContent = T('Remove', 'הסר'); rm.className = 'danger';
+      rm.onclick = async () => { if (!confirm(T(`Remove ${u.name}? Their pairing code stops working. Letters already in the library stay.`, `להסיר את ${u.name}? קוד הצימוד שלו יפסיק לעבוד. אותיות שכבר בספרייה נשארות.`))) return; await api(`/api/users/${u.id}`, { method: 'POST', body: JSON.stringify({ remove: true }) }); loadUsers(); };
       tr.children[4].appendChild(rm);
     } else tr.children[3].textContent = '—';
     body.appendChild(tr);
@@ -206,7 +209,7 @@ async function loadUsers() {
   const box = $('pendBox'); box.innerHTML = '';
   if (pend.total) {
     const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
-    box.innerHTML = `<h2>Letters waiting for your approval (${pend.total})</h2><p class="small">Check that each letter is labelled right (blue letter). Approve adds them to the shared library.</p><div class="pend-grid" id="pendGrid"></div><div class="row" style="max-width:520px"><button class="primary" id="pendOk">✓ Approve all shown</button><button class="danger" id="pendNo">✗ Discard all shown</button></div>`;
+    box.innerHTML = `<h2>${T('Letters waiting for your approval', 'אותיות שממתינות לאישורך')} (${pend.total})</h2><p class="small">${T('Check that each letter is labelled right (blue letter). Approve adds them to the shared library.', 'בדוק שכל אות מסומנת נכון (האות הכחולה). אישור מוסיף אותן לספרייה המשותפת.')}</p><div class="pend-grid" id="pendGrid"></div><div class="row" style="max-width:520px"><button class="primary" id="pendOk">${T('✓ Approve all shown', '✓ אשר את כל המוצגות')}</button><button class="danger" id="pendNo">${T('✗ Discard all shown', '✗ מחק את כל המוצגות')}</button></div>`;
     for (const it of pend.items) {
       const d = document.createElement('div'); d.title = names[it.user] || '';
       const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48;
@@ -216,14 +219,14 @@ async function loadUsers() {
     }
     const uids = pend.items.map((i) => i.uid);
     $('pendOk').onclick = async () => { await api('/api/pending', { method: 'POST', body: JSON.stringify({ action: 'approve', uids }) }); loadLib(); };
-    $('pendNo').onclick = async () => { if (!confirm('Discard these letters?')) return; await api('/api/pending', { method: 'POST', body: JSON.stringify({ action: 'discard', uids }) }); loadLib(); };
+    $('pendNo').onclick = async () => { if (!confirm(T('Discard these letters?', 'למחוק את האותיות האלה?'))) return; await api('/api/pending', { method: 'POST', body: JSON.stringify({ action: 'discard', uids }) }); loadLib(); };
   }
 }
 $('addHelper').onclick = async () => {
   const name = $('helperName').value.trim(); if (!name) return;
   const u = await (await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) })).json();
   $('helperName').value = '';
-  alert(`${u.name}'s pairing code: ${u.code}\nThey type it in their app: Library & AI → PC sync.`);
+  alert(T(`${u.name}'s pairing code: ${u.code}\nThey type it in their app: Library & AI → PC sync.`, `קוד הצימוד של ${u.name}: ${u.code}\nמקלידים אותו באפליקציה: ספרייה ובינה ← סנכרון עם המחשב.`));
   loadUsers();
 };
 

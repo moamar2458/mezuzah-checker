@@ -109,11 +109,11 @@
     <button id="certBtn" class="big">📜 Result &amp; certificate</button>
     <div id="qualityBox"></div>
     <div id="summary" class="summary"></div>
-    <div class="zoom-bar">
+    <div class="zoom-bar" dir="ltr">
       <button id="zoomOut">−</button><span id="zoomLbl">100%</span><button id="zoomIn">+</button>
       <label class="small"><input type="checkbox" id="showBoxes"> show found letters</label>
     </div>
-    <div id="canvasWrap" class="canvas-wrap"><canvas id="reportCanvas"></canvas></div>
+    <div id="canvasWrap" class="canvas-wrap" dir="ltr"><canvas id="reportCanvas"></canvas></div>
     <ol id="issueList" class="issues"></ol>
     <p class="disclaimer">These are only places to check. The sofer decides.</p>
     <div class="row"><button id="retakeBtn">Retake photo</button><button class="primary" data-go="home">Done</button></div>
@@ -129,7 +129,7 @@
     <div class="row"><button id="certSave" class="primary">Save result</button><button id="certPrint">🖨 Print certificate</button></div>
     <div class="row"><button id="certShare">📤 Send to Melechet Sofer / share</button></div>
     <div id="certMsg" class="small"></div>
-    <div id="certNeedBiz" class="note warn" hidden>Add your business name in <button class="link" data-go="library">Library &amp; AI → Business details</button> so it appears on the certificate.</div>
+    <div id="certNeedBiz" class="note warn" hidden data-he="הוסף את שם העסק ב<button class=&quot;link&quot; data-go=&quot;library&quot;>ספרייה ובינה ← פרטי העסק</button> כדי שיופיע על התעודה.">Add your business name in <button class="link" data-go="library">Library &amp; AI → Business details</button> so it appears on the certificate.</div>
     <h2>Preview</h2>
     <div id="certPreview" class="cert-preview"></div>
   </section>
@@ -137,10 +137,10 @@
   <!-- BEFORE / AFTER -->
   <section id="compare" class="screen" hidden>
     <div id="cmpHead" class="for-line"></div>
-    <p class="small">Each pair shows the same letter: <b>before</b> (left) and <b>now</b> (right). Only letters that changed much more than the rest of the page are listed.</p>
+    <p class="small" data-he="כל זוג מראה את אותה אות: <b>לפני</b> (שמאל) ו<b>עכשיו</b> (ימין). מוצגות רק אותיות שהשתנו הרבה יותר משאר הדף.">Each pair shows the same letter: <b>before</b> (left) and <b>now</b> (right). Only letters that changed much more than the rest of the page are listed.</p>
     <div id="cmpList"></div>
     <h2>Whole photos</h2>
-    <div class="cmp-whole"><div><div class="small">Before</div><canvas id="cmpOld"></canvas></div><div><div class="small">Now</div><canvas id="cmpNew"></canvas></div></div>
+    <div class="cmp-whole" dir="ltr"><div><div class="small">Before</div><canvas id="cmpOld"></canvas></div><div><div class="small">Now</div><canvas id="cmpNew"></canvas></div></div>
   </section>
 
   <!-- LEARN DONE -->
@@ -189,9 +189,9 @@
     <h2>PC sync</h2>
     <div id="syncInfo" class="small"></div>
     <label class="field">Pairing code (shown in the PC program window)
-      <input id="pairCode" placeholder="ABCD-1234" autocomplete="off" autocapitalize="characters"></label>
+      <input id="pairCode" dir="ltr" placeholder="ABCD-1234" autocomplete="off" autocapitalize="characters"></label>
     <label class="field">PC address <span class="small">(leave empty when the app was opened from the PC)</span>
-      <input id="pcUrl" placeholder="https://my-pc.tail1234.ts.net" inputmode="url" autocomplete="off"></label>
+      <input id="pcUrl" dir="ltr" placeholder="https://my-pc.tail1234.ts.net" inputmode="url" autocomplete="off"></label>
     <div class="row"><button id="syncSave" class="primary">Save &amp; sync now</button></div>
     <p class="small">Every check and its sure letters are sent to the PC by themselves – right away, or later when the PC can be reached. The PC trains the AI and sends the better AI back.</p>
     <h2>Settings</h2>
@@ -206,7 +206,7 @@
 
   <!-- REFERENCE -->
   <section id="reference" class="screen" hidden>
-    <p>This is the text the app compares against: Devarim 6:4–9 and 11:13–21. The <b>|</b> marks the break between the two parshiyot.
+    <p data-he="זה הנוסח שהאפליקציה משווה אליו: דברים ו, ד–ט ו־יא, יג–כא. הסימן <b>|</b> מסמן את ההפסק בין שתי הפרשיות. נא לקרוא בעיון ולתקן אם צריך.">This is the text the app compares against: Devarim 6:4–9 and 11:13–21. The <b>|</b> marks the break between the two parshiyot.
       Please read it carefully and correct it if needed.</p>
     <textarea id="refText" dir="rtl" rows="16" spellcheck="false"></textarea>
     <div id="refStats" class="small"></div>
