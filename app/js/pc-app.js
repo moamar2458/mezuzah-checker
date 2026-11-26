@@ -5,6 +5,8 @@ import { nextDue, dueState, calendarFile } from './customers.js';
 import { VERDICTS, certificateHTML, CERT_CSS, printCertificate } from './certificate.js';
 import { T, dateStr, dateTimeStr, translatePage } from './i18n.js';
 import { HE_PC } from './lang-he.js';
+import { styleName, STYLES } from './styles.js';
+import { LEVELS } from './level.js';
 translatePage(HE_PC);
 { const st = document.createElement('style'); st.textContent = CERT_CSS; document.head.appendChild(st); }
 
@@ -117,6 +119,7 @@ async function openCheck(uid) {
   const v = $('viewer');
   v.innerHTML = `
     <div id="q"></div>
+    <div id="lvl"></div>
     <div id="res" class="for-line"></div>
     <div class="zoom-bar" dir="ltr"><button id="zo">−</button><span id="zl">100%</span><button id="zi">+</button></div>
     <div class="canvas-wrap" id="wrap" dir="ltr"><canvas id="cv"></canvas></div>
@@ -146,12 +149,28 @@ async function openCheck(uid) {
     }));
     $('res').append(t, b);
   } else $('res').textContent = meta.mode === 'check' ? T('No result saved by the sofer yet.', 'הסופר עוד לא שמר תוצאה.') : '';
+  // ktav style and the suggested level (only a suggestion – the sofer decides)
+  const lv = meta.level && LEVELS[meta.level.level];
+  $('lvl').innerHTML = '';
+  if (meta.style || lv) {
+    const d = document.createElement('div'); d.className = `level-box ${meta.level ? meta.level.level : ''}`;
+    d.innerHTML = `<div class="small"></div><div class="lv"></div><ul></ul><div class="small">${T('Only a suggestion from the photo. The decision is always the sofer\'s.', 'זו רק הצעה לפי התמונה. ההחלטה תמיד של הסופר.')}</div>`;
+    d.querySelector('.small').textContent = `${T('Ktav', 'כתב')}: ${meta.style ? styleName(meta.style) : T('not chosen', 'לא נבחר')}`;
+    d.querySelector('.lv').textContent = lv ? `${T('Suggested level', 'הצעת רמה')}: ${lv.icon} ${T(lv.en, lv.he)}` : '';
+    for (const r of (meta.level && meta.level.reasons) || []) { const li = document.createElement('li'); li.textContent = r; d.querySelector('ul').appendChild(li); }
+    $('lvl').appendChild(d);
+  }
   const il = $('il');
   if (!(meta.issues || []).length) il.innerHTML = `<li>${T('No places were marked. The sofer should still check the whole mezuzah.', 'לא סומנו מקומות. הסופר צריך בכל זאת לבדוק את כל המזוזה.')}</li>`;
   (meta.issues || []).forEach((is, k) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="num">${k + 1}</span><span></span>`;
-    li.lastChild.textContent = is.note;
+    li.innerHTML = `<span class="num">${k + 1}</span><span class="body"><span class="why"></span><span class="full"></span><span class="saved-note" hidden></span></span>`;
+    li.querySelector('.why').textContent = is.why || '';
+    li.querySelector('.full').textContent = is.note;
+    if (is.answer) {
+      const v = { kosher: T('✓ Kosher', '✓ כשר'), pasul: T('✗ Not kosher', '✗ פסול'), mehudar: T('★ Mehudar problem', '★ בעיית הידור') }[is.answer.verdict] || '';
+      const sn = li.querySelector('.saved-note'); sn.hidden = false; sn.textContent = `${T("Sofer's answer", 'תשובת הסופר')}: ${v}${is.answer.why ? ` – "${is.answer.why}"` : ''}`;
+    }
     li.onclick = () => {
       draw(k); setZoom(Math.max(zoom, 3));
       for (const [i, x] of [...il.children].entries()) x.classList.toggle('sel', i === k);
@@ -171,6 +190,7 @@ async function loadLib() {
   const st = await (await api('/api/library/stats')).json();
   $('libInfo').textContent = T(`${st.total} sure letters from real mezuzot. The AI trains by itself after ${st.autoMin} letters, and again every ${st.autoEvery} new letters (${st.sinceTrain} new since the last training).`, `${st.total} אותיות בטוחות ממזוזות אמיתיות. הבינה מתאמנת לבד אחרי ${st.autoMin} אותיות, ושוב כל ${st.autoEvery} אותיות חדשות (${st.sinceTrain} חדשות מאז האימון האחרון).`)
     + T(` Marked places (good / problem) on ${st.spots || 0} letters – shared with every phone.`, ` מקומות מסומנים (תקין / בעיה) על ${st.spots || 0} אותיות – משותפים לכל הטלפונים.`);
+  if (st.byStyle) $('libInfo').textContent += ` · ${STYLES.map((x) => `${T(x.en, x.he)}: ${st.byStyle[x.id] || 0}`).join(' · ')}${st.noStyle ? ` · ${T('no style', 'ללא כתב')}: ${st.noStyle}` : ''}`;
   $('libCounts').innerHTML = LETTERS.map((L) => `<div class="${st.counts[L] < 30 ? 'low' : ''}"><b>${L}</b>${st.counts[L]}</div>`).join('');
   const m = await (await api('/api/model/meta')).json();
   $('modelInfo').textContent = m.version

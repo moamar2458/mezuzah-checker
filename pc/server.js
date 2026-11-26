@@ -95,7 +95,7 @@ async function addSamples(items, device, scan, user = config.users[0]) {
     const x = Buffer.from(it.x, 'base64');
     if (x.length !== 1024) continue;
     if (it.src !== 'auto' && it.src !== 'confirmed') continue; // only sure or sofer-approved letters
-    const rec = { uid: it.uid, label: it.label, x: it.x, view: it.view || null, src: it.src, scan: user.role === 'owner' ? (it.scan || scan || null) : null, device, user: user.id, date: it.date || Date.now() };
+    const rec = { uid: it.uid, label: it.label, x: it.x, view: it.view || null, src: it.src, scan: user.role === 'owner' ? (it.scan || scan || null) : null, device, user: user.id, date: it.date || Date.now(), style: STYLE_IDS.includes(it.style) ? it.style : null };
     libUids.add(it.uid);
     if (hold) { pending.push(rec); added++; continue; }
     lines.push(JSON.stringify(rec));
@@ -108,6 +108,13 @@ async function addSamples(items, device, scan, user = config.users[0]) {
   return added;
 }
 
+// ---------- ktav style of each check (the sofer may correct it later; the library counts letters per style) ----------
+const STYLE_IDS = ['by', 'ari', 'sfd', 'tmn'];
+const stylesFile = path.join(DATA, 'styles.json');
+const scanStyles = fs.existsSync(stylesFile) ? JSON.parse(fs.readFileSync(stylesFile, 'utf8')) : {};
+const setScanStyle = (uid, st) => { if (!uid || !STYLE_IDS.includes(st)) return; scanStyles[uid] = st; fs.writeFileSync(stylesFile, JSON.stringify(scanStyles)); };
+const styleOf = (smp) => (smp.scan && scanStyles[smp.scan]) || smp.style || null;
+
 // ---------- spot memory: places marked on letters as good / problem (shared with every phone and helper) ----------
 const marksFile = path.join(DATA, 'marks.json');
 const marks = fs.existsSync(marksFile) ? JSON.parse(fs.readFileSync(marksFile, 'utf8')) : {};
@@ -119,13 +126,14 @@ function setMarks(b, user, device) {
   if (mine && mine.user !== user.id && user.role !== 'owner') return { error: 'not yours' };
   const list = (Array.isArray(b.marks) ? b.marks : []).slice(0, 30).map((m) => ({
     u: Math.min(1, Math.max(0, Number(m.u) || 0)), v: Math.min(1, Math.max(0, Number(m.v) || 0)), r: Math.min(0.4, Math.max(0.02, Number(m.r) || 0.08)),
-    kind: m.kind === 'good' ? 'good' : 'problem', note: String(m.note || '').slice(0, 200),
+    kind: m.kind === 'good' ? 'good' : m.kind === 'mehudar' ? 'mehudar' : 'problem', note: String(m.note || '').slice(0, 300),
+    verdict: ['kosher', 'pasul', 'mehudar'].includes(m.verdict) ? m.verdict : undefined,
   }));
   if (!list.length) { if (!mine) return { ok: true }; delete marks[uid]; }
   else {
     const zoom = typeof b.zoom === 'string' ? Buffer.from(b.zoom, 'base64') : null;
     if (!zoom || (zoom.length !== 96 * 96 && zoom.length !== 48 * 48)) return { error: 'bad picture' };
-    marks[uid] = { uid, label: b.label, zoom: zoom.toString('base64'), marks: list, user: mine ? mine.user : user.id, device, date: Date.now() };
+    marks[uid] = { uid, label: b.label, zoom: zoom.toString('base64'), marks: list, user: mine ? mine.user : user.id, device, date: Date.now(), style: STYLE_IDS.includes(b.style) ? b.style : null };
   }
   spotsVer = Date.now();
   fs.writeFileSync(marksFile, JSON.stringify(marks));
@@ -342,7 +350,9 @@ async function api(req, res, p) {
       uid, device: safeId(b.device), date: b.date, mode: b.mode, stats: b.stats, issues: b.issues, quality: b.quality, w: b.w, h: b.h, received: Date.now(),
       customerUid: b.customerUid || null, itemUid: b.itemUid || null, customerName: b.customerName || null, itemName: b.itemName || null,
       letters: Array.isArray(b.letters) ? b.letters : [], letterH: b.letterH || null, printWarnings: b.printWarnings || [],
+      style: STYLE_IDS.includes(b.style) ? b.style : null, styleGuess: b.styleGuess || null, level: b.level || null, metrics: b.metrics || null,
     };
+    if (meta.style) setScanStyle(uid, meta.style);
     if (meta.letters.length) {
       const idx = await loadPrintIndex();
       const me = { uid, itemUid: meta.itemUid, date: meta.date, customerName: meta.customerName, itemName: meta.itemName, letters: fpLetters(meta.letters) };
@@ -358,7 +368,7 @@ async function api(req, res, p) {
   if (p === '/api/scans' && m === 'GET') {
     const out = [];
     for (const id of await fsp.readdir(path.join(DATA, 'scans'))) {
-      try { const mt = JSON.parse(await fsp.readFile(path.join(DATA, 'scans', id, 'meta.json'), 'utf8')); out.push({ uid: mt.uid, date: mt.date, device: mt.device, mode: mt.mode, stats: mt.stats, nIssues: (mt.issues || []).length, customerName: mt.customerName, itemName: mt.itemName, customerUid: mt.customerUid, itemUid: mt.itemUid, printed: !!((mt.printWarningsPC || []).length || (mt.printWarnings || []).length), verdict: mt.result ? mt.result.verdict : null }); } catch { /* skip */ }
+      try { const mt = JSON.parse(await fsp.readFile(path.join(DATA, 'scans', id, 'meta.json'), 'utf8')); out.push({ uid: mt.uid, date: mt.date, device: mt.device, mode: mt.mode, stats: mt.stats, nIssues: (mt.issues || []).length, style: mt.style || null, level: mt.level ? mt.level.level : null, customerName: mt.customerName, itemName: mt.itemName, customerUid: mt.customerUid, itemUid: mt.itemUid, printed: !!((mt.printWarningsPC || []).length || (mt.printWarnings || []).length), verdict: mt.result ? mt.result.verdict : null }); } catch { /* skip */ }
     }
     out.sort((a, b) => b.date - a.date);
     return send(res, 200, out);
@@ -370,6 +380,21 @@ async function api(req, res, p) {
     try {
       const mt = JSON.parse(await fsp.readFile(f, 'utf8'));
       mt.result = b.result || null;
+      await fsp.writeFile(f, JSON.stringify(mt));
+      return send(res, 200, { ok: true });
+    } catch { return send(res, 404, { error: 'check not found' }); }
+  }
+  const upm = p.match(/^\/api\/scans\/([a-zA-Z0-9_-]+)\/update$/);
+  if (upm && m === 'POST') {
+    // later changes from the phone: the chosen ktav style, the suggested level, the sofer's answers on the marked places
+    const b = await readBody(req, 4e6);
+    const uid = safeId(upm[1]);
+    const f = path.join(DATA, 'scans', uid, 'meta.json');
+    try {
+      const mt = JSON.parse(await fsp.readFile(f, 'utf8'));
+      if (STYLE_IDS.includes(b.style)) { mt.style = b.style; setScanStyle(uid, b.style); }
+      if (b.level) mt.level = b.level;
+      if (Array.isArray(b.issues)) mt.issues = b.issues.slice(0, 500);
       await fsp.writeFile(f, JSON.stringify(mt));
       return send(res, 200, { ok: true });
     } catch { return send(res, 404, { error: 'check not found' }); }
@@ -411,8 +436,9 @@ async function api(req, res, p) {
   }
   if (p === '/api/library/stats') {
     const counts = Object.fromEntries(LETTERS.map((l) => [l, 0]));
-    for (const s of library) counts[s.label]++;
-    return send(res, 200, { spots: Object.keys(marks).length, total: library.length, counts, sinceTrain: library.length - (state.lettersAtLastTrain || 0), autoMin: AUTO_MIN, autoEvery: AUTO_EVERY });
+    const byStyle = Object.fromEntries(STYLE_IDS.map((x) => [x, 0])); let noStyle = 0;
+    for (const s of library) { counts[s.label]++; const st = styleOf(s); if (st) byStyle[st]++; else noStyle++; }
+    return send(res, 200, { byStyle, noStyle, spots: Object.keys(marks).length, total: library.length, counts, sinceTrain: library.length - (state.lettersAtLastTrain || 0), autoMin: AUTO_MIN, autoEvery: AUTO_EVERY });
   }
   if (p === '/api/model/meta') {
     const meta = currentModelMeta();

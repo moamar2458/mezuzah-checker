@@ -17,6 +17,11 @@ import { parseReference } from './reference.js';
 import { b64ToU8 } from './library.js';
 import { T, dateStr, dateTimeStr, translatePage, getLang } from './i18n.js';
 import { HE_APP } from './lang-he.js';
+import { STYLES, buildPrototypes, styleName } from './styles.js';
+import { suggestLevel, LEVELS } from './level.js';
+import { loadFonts } from './synth.js';
+import { normalizeMask } from './crop.js';
+import { queueScanUpdate } from './sync.js';
 translatePage(HE_APP);
 
 const $ = (id) => document.getElementById(id);
@@ -524,6 +529,39 @@ $('scanGo').onclick = async () => {
   finally { $('scanGo').disabled = false; }
 };
 
+// ---------- ktav style: the typical shape of each letter in each style ----------
+let fontProtosP = null;
+/** Letter shapes of the STaM fonts: Ashkenaz ≈ Beit Yosef, Sefarad ≈ Sefaradi (Velish). */
+function fontProtos() {
+  if (!fontProtosP) fontProtosP = (async () => {
+    try { await loadFonts(); } catch { return {}; }
+    const out = {}, S = 160;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    for (const [st, fam] of [['by', 'StamAshkenaz'], ['sfd', 'StamSefarad']]) {
+      out[st] = {};
+      for (const ch of LETTERS) {
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S, S);
+        ctx.fillStyle = '#000'; ctx.font = `64px ${fam}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, S / 2, S / 2);
+        const d = ctx.getImageData(0, 0, S, S).data;
+        let x0 = S, y0 = S, x1 = -1, y1 = -1;
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (d[(y * S + x) * 4] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        if (x1 < 0) continue;
+        const w = x1 - x0 + 1, h = y1 - y0 + 1, m = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[y * w + x] = d[((y0 + y) * S + x0 + x) * 4] < 128 ? 1 : 0;
+        out[st][ch] = normalizeMask(m, w, h);
+      }
+    }
+    return out;
+  })();
+  return fontProtosP;
+}
+/** Font shapes + every library letter whose mezuzah style was confirmed (so all four styles are learned from your own mezuzot). */
+async function styleProtos() {
+  const samples = (await db.all('samples')).filter((x) => x.style);
+  return buildPrototypes(await fontProtos(), samples);
+}
+
 // ---------- running the check ----------
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
 let jobId = 0; const jobs = new Map();
@@ -542,7 +580,7 @@ async function process(img) {
   const data = ctx.getImageData(0, 0, w, h).data;
   let res;
   try {
-    res = await runJob({ rgba: data.buffer, w, h, maxSide: ANALYSIS_MAX, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang(), spots: await spotMemory() }, [data.buffer]);
+    res = await runJob({ rgba: data.buffer, w, h, maxSide: ANALYSIS_MAX, refText: state.refText, modelJson: state.modelJson, sens: state.sens, lang: getLang(), spots: await spotMemory(), styleProtos: await styleProtos() }, [data.buffer]);
   } catch (err) {
     alert(T('Something went wrong while checking:\n', 'משהו השתבש בבדיקה:\n') + err.message);
     show('home', false); return;
@@ -563,7 +601,11 @@ async function process(img) {
     customerUid: t ? t.customer.uid : null, itemUid: t ? t.item.uid : null,
     customerName: t ? t.customer.name : null, itemName: t ? t.item.name : null,
     letters: res.letters || [], letterH: res.letterH || null,
+    style: { guess: res.style ? res.style.id : null, conf: res.style ? res.style.conf : 0, known: res.style ? res.style.known : [], chosen: res.style ? res.style.id : null },
+    styleIssues: res.styleIssues || {}, metrics: res.metrics || null,
   };
+  state.spotViews = res.spotViews || [];
+  scan.level = levelOf(scan);
   const prevUid = t ? t.item.lastScanUid : null; // the last check of this same mezuzah
   // printed-copy warning: compare with earlier checks of other mezuzot on this phone (the PC compares with all)
   if (res.ok && scan.letters.length) {
@@ -590,7 +632,7 @@ async function process(img) {
   pruneHistory();
   // every checked photo adds its letters to the library automatically
   let learned = { sure: 0, unsure: 0, sureSamples: [] };
-  if (res.ok) learned = await addScanLetters(scanId, res.samples, scan.uid);
+  if (res.ok) learned = await addScanLetters(scanId, res.samples, scan.uid, scan.style.chosen);
   // and is sent to the PC (now, or as soon as the PC can be reached)
   await queueScan(scan, photo, learned.sureSamples);
   runSync();
@@ -758,17 +800,150 @@ function showReport(res, learned) {
     cell(`${s.matched}/${s.expected}`, T('letters matched', 'אותיות הותאמו')), cell(res.issues.length, T('places to check', 'מקומות לבדיקה'), true),
     cell(s.missing, T('missing?', 'חסרות?'), true), cell(s.extra, T('extra?', 'עודפות?'), true), cell(s.touching, T('touching?', 'נוגעות?'), true), cell(s.broken, T('broken?', 'שבורות?'), true),
   ].join('') + `<div><b>${learned.sure}</b>${T(`learned (+${learned.unsure} to review)`, `נלמדו · ${learned.unsure} לבדיקה`)}</div>`;
-  const list = $('issueList');
+  showStyleBox(); showLevelBox(); fillIssueList();
+  setZoom(1);
+}
+
+// ---------- the suggested level (only a suggestion: the sofer decides) ----------
+function levelOf(scan) {
+  return suggestLevel({ issues: scan.issues || [], metrics: scan.metrics, ok: !!scan.stats, matched: scan.stats ? scan.stats.matched : 0, expected: scan.stats ? scan.stats.expected : 713, warnings: (scan.quality && scan.quality.warnings) || [] });
+}
+function showLevelBox() {
+  const scan = state.lastScan, box = $('levelBox');
+  if (!scan || !scan.level) { box.hidden = true; return; }
+  const L = scan.level, lv = LEVELS[L.level];
+  box.className = `level-box ${L.level}`; box.hidden = false;
+  box.innerHTML = `<div class="small">${T('Suggested level', 'הצעת רמה')}</div><div class="lv"></div><ul></ul><div class="small good"></div>
+    <div class="small">${T('Only a suggestion from the photo. The decision is always yours.', 'זו רק הצעה לפי התמונה. ההחלטה תמיד שלך.')}</div>`;
+  box.querySelector('.lv').textContent = `${lv.icon} ${T(lv.en, lv.he)}`;
+  const ul = box.querySelector('ul');
+  for (const r of L.reasons) { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); }
+  if (!L.reasons.length) ul.remove();
+  box.querySelector('.good').textContent = L.good.length ? `✓ ${L.good.join(' · ')}` : '';
+}
+async function refreshLevel() {
+  const scan = state.lastScan; if (!scan) return;
+  scan.level = levelOf(scan);
+  showLevelBox();
+  await db.put('scans', scan);
+  await queueScanUpdate(scan.uid, { level: scan.level, issues: scan.issues });
+  runSync();
+}
+
+// ---------- ktav style: the app's guess, and the sofer's correction ----------
+function showStyleBox() {
+  const scan = state.lastScan, box = $('styleBox');
+  if (!scan || !scan.style) { box.hidden = true; return; }
+  box.hidden = false;
+  const st = scan.style;
+  const sure = st.chosen !== st.guess ? T('chosen by you', 'נבחר על ידך')
+    : !st.guess ? T('could not be recognised yet – please choose', 'עוד לא ניתן לזהות – בחר בבקשה')
+      : st.conf >= 0.7 ? T('the app is fairly sure', 'האפליקציה די בטוחה') : st.conf >= 0.35 ? T('a guess', 'ניחוש') : T('a weak guess – please check', 'ניחוש חלש – בדוק בבקשה');
+  box.innerHTML = `<label>${T('Ktav', 'כתב')}: <select id="styleSel"></select></label> <span class="small"></span>
+    <div class="small">${T('If the guess is wrong, choose the right style: the letters are then checked by that style and kept under it in the library.', 'אם הניחוש שגוי, בחר את הכתב הנכון: האותיות ייבדקו לפי הכתב הזה ויישמרו תחתיו בספרייה.')}${(st.known || []).length < 4 ? ' ' + T('Styles the app cannot tell yet are learned from the mezuzot you confirm.', 'כתבים שהאפליקציה עוד לא מזהה נלמדים מהמזוזות שאתה מאשר.') : ''}</div>`;
+  box.querySelector('span.small').textContent = `(${sure})`;
+  const sel = box.querySelector('select');
+  if (!st.chosen) sel.innerHTML = `<option value="">${T('— choose —', '— בחר —')}</option>`;
+  for (const x of STYLES) { const o = document.createElement('option'); o.value = x.id; o.textContent = T(x.en, x.he); sel.appendChild(o); }
+  sel.value = st.chosen || '';
+  sel.onchange = () => setStyle(sel.value);
+}
+async function setStyle(id) {
+  const scan = state.lastScan; if (!scan || !id) return;
+  scan.style.chosen = id;
+  // the letters are checked by the chosen style's shapes
+  const keep = scan.issues.filter((is) => is.kind !== 'style');
+  const add = ((scan.styleIssues || {})[id] || []).filter((is) => !keep.some((o) => o.li === is.li));
+  scan.issues.length = 0; scan.issues.push(...keep, ...add);
+  sortIssues(scan.issues, scan.letterH || 40);
+  if (current) current.issues = scan.issues;
+  // the library keeps every style apart: re-label this mezuzah's letters
+  for (const store of ['samples', 'review']) {
+    for (const it of await db.all(store)) if (it.scanUid === scan.uid && it.style !== id) { it.style = id; await db.put(store, it); }
+  }
+  await queueScanUpdate(scan.uid, { style: id });
+  showStyleBox(); drawReport(current); fillIssueList();
+  await refreshLevel();
+}
+
+// ---------- the list of marked places, with the sofer's answer on each ----------
+const VERDICT_BTNS = [['kosher', 'k', () => T('✓ Kosher', '✓ כשר')], ['pasul', 'p', () => T('✗ Not kosher', '✗ פסול')], ['mehudar', 'm', () => T('★ Mehudar problem', '★ בעיית הידור')]];
+const Speech = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+function fillIssueList() {
+  const res = current, list = $('issueList');
   list.innerHTML = '';
+  $('answerHint').hidden = !res.issues.length;
   if (!res.issues.length) list.innerHTML = `<li>${T('No places were marked. The sofer should still check the whole mezuzah.', 'לא סומנו מקומות. הסופר צריך בכל זאת לבדוק את כל המזוזה.')}</li>`;
   res.issues.forEach((is, k) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="num">${k + 1}</span><span></span>`;
-    li.lastChild.textContent = is.note;
-    li.onclick = () => focusIssue(k);
+    li.innerHTML = `<span class="num">${k + 1}</span><span class="body"><span class="why"></span><span class="full"></span><span class="saved-note" hidden></span></span>
+      <div class="answer"></div>`;
+    li.querySelector('.why').textContent = is.why || '';
+    li.querySelector('.full').textContent = is.note;
+    const prev = is.prevNote ?? is.taughtNote;
+    const prevKind = is.prevKind ?? is.taughtKind;
+    if (prev !== undefined) {
+      const sn = li.querySelector('.saved-note'); sn.hidden = false;
+      const kindTxt = prevKind === 'good' ? T('kosher', 'כשר') : prevKind === 'mehudar' ? T('mehudar problem', 'בעיית הידור') : T('not kosher', 'פסול');
+      sn.textContent = `💬 ${T('You answered a similar place before', 'ענית על מקום דומה בעבר')}: ${kindTxt}${prev ? ` – "${prev}"` : ''}`;
+    }
+    li.querySelector('.body').onclick = () => focusIssue(k);
+    li.querySelector('.num').onclick = () => focusIssue(k);
+    const ans = li.querySelector('.answer');
+    const a = is.answer || {};
+    for (const [v, cls, label] of VERDICT_BTNS) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = `${cls}${a.verdict === v ? ' on' : ''}`; b.textContent = label();
+      b.onclick = (e) => { e.stopPropagation(); saveAnswer(is, k, v, li); };
+      ans.appendChild(b);
+    }
+    const inp = document.createElement('input'); inp.placeholder = T('Why? (in your own words)', 'למה? (במילים שלך)'); inp.value = a.why || ''; inp.maxLength = 280;
+    inp.onclick = (e) => e.stopPropagation();
+    inp.onchange = () => { if (is.answer) saveAnswer(is, k, is.answer.verdict, li, inp.value); };
+    ans.appendChild(inp);
+    if (Speech) {
+      const mic = document.createElement('button'); mic.type = 'button'; mic.className = 'mic'; mic.textContent = '🎤'; mic.title = T('Speak (Hebrew)', 'דבר (עברית)');
+      mic.onclick = (e) => { e.stopPropagation(); listen(inp, mic, () => { if (is.answer) saveAnswer(is, k, is.answer.verdict, li, inp.value); }); };
+      ans.appendChild(mic);
+    }
+    const ok = document.createElement('span'); ok.className = 'ok-msg'; ans.appendChild(ok);
     list.appendChild(li);
   });
-  setZoom(1);
+}
+/** Hebrew dictation into the explanation box (where the browser has speech recognition). */
+let rec = null;
+function listen(inp, btn, done) {
+  if (rec) { rec.stop(); return; }
+  rec = new Speech(); rec.lang = 'he-IL'; rec.interimResults = true; rec.continuous = false;
+  const before = inp.value ? inp.value + ' ' : '';
+  btn.classList.add('rec');
+  rec.onresult = (e) => { inp.value = before + [...e.results].map((r) => r[0].transcript).join(' '); };
+  rec.onerror = (e) => { if (e.error === 'not-allowed') alert(T('The microphone is not allowed. You can also use the microphone of the keyboard.', 'אין הרשאה למיקרופון. אפשר גם להשתמש במיקרופון של המקלדת.')); };
+  rec.onend = () => { btn.classList.remove('rec'); rec = null; done(); };
+  try { rec.start(); } catch { btn.classList.remove('rec'); rec = null; }
+}
+/** The sofer's answer on one place: kept with the check, in the spot memory (with the picture of the place), and as a training letter. */
+async function saveAnswer(is, k, verdict, li, why) {
+  const inp = li.querySelector('.answer input');
+  is.answer = { verdict, why: (why ?? inp.value ?? '').trim().slice(0, 280), date: Date.now() };
+  for (const b of li.querySelectorAll('.answer button:not(.mic)')) b.classList.toggle('on', b.className.split(' ')[0] === VERDICT_BTNS.find((x) => x[0] === verdict)[1]);
+  const scan = state.lastScan;
+  // the picture of the place + the answer → spot memory (next time a similar place is found, this explanation is shown)
+  const sv = state.spotViews && is.sv !== undefined ? state.spotViews[is.sv] : null;
+  const label = is.label || (sv && sv.label);
+  if (sv && label && scan) {
+    const rec = { uid: `${scan.uid}-${is.sv}`, label, zoom: sv.zoom, date: Date.now(), style: scan.style && scan.style.chosen,
+      marks: [{ u: sv.u, v: sv.v, r: sv.r, kind: verdict === 'kosher' ? 'good' : verdict === 'pasul' ? 'problem' : 'mehudar', note: is.answer.why, verdict }] };
+    await saveSpot(rec); await queueMarks(rec); spotsChanged();
+  }
+  // kosher = the letter is a good example of itself: it goes into the letter library (training the letter AI)
+  if (verdict === 'kosher' && scan && is.li !== undefined && current.boxes && current.boxes[is.li]) {
+    const b = current.boxes[is.li].b;
+    const item = (await db.all('review')).find((r) => r.scanUid === scan.uid && r.box && r.box.join() === b.join());
+    if (item && (item.guess || label)) { const smp = await resolveReview(item, item.guess || label); if (smp) await queueSamples([{ ...smp, scanUid: scan.uid }]); }
+  }
+  drawReport(current, k);
+  const okm = li.querySelector('.ok-msg'); okm.textContent = T('Saved ✓', 'נשמר ✓');
+  await refreshLevel();
 }
 
 function setZoom(z) {
@@ -962,6 +1137,10 @@ for (const L of LETTERS) {
 async function openLibrary() {
   const counts = await db.labelCounts();
   $('libCounts').innerHTML = LETTERS.map((L) => `<div class="${(counts[L] || 0) < 20 ? 'low' : ''}"><b>${L}</b>${counts[L] || 0}</div>`).join('');
+  // the four ktav styles are kept apart in the library
+  const bySt = {}; let none = 0;
+  for (const x of await db.all('samples')) { if (x.style) bySt[x.style] = (bySt[x.style] || 0) + 1; else none++; }
+  $('libStyles').textContent = `${T('Letters by ktav', 'אותיות לפי כתב')}: ${STYLES.map((x) => `${T(x.en, x.he)} ${bySt[x.id] || 0}`).join(' · ')}${none ? ` · ${T('no style', 'ללא כתב')} ${none}` : ''}`;
   let info = T('No model loaded. The app still works using letter shapes and the known text. Train a model on your PC (or here) to make it better.', 'לא נטען מודל. האפליקציה עובדת בכל זאת לפי צורות האותיות והנוסח הידוע. אמן מודל במחשב (או כאן) כדי לשפר.');
   if (state.modelJson) {
     try {

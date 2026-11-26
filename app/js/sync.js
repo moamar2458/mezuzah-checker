@@ -27,9 +27,10 @@ export async function queueScan(scan, photoBlob, sureSamples) {
       uid: scan.uid, date: scan.date, mode: scan.mode, stats: scan.stats, issues: scan.issues, quality: scan.quality, w: scan.w, h: scan.h,
       letters: (scan.letters || []).map((l) => ({ ...l, fp: l.fp ? u8ToB64(l.fp) : null })), letterH: scan.letterH || null,
       printWarnings: scan.printWarnings || [],
+      style: scan.style ? scan.style.chosen : null, styleGuess: scan.style || null, level: scan.level || null, metrics: scan.metrics || null,
       customerUid: scan.customerUid || null, itemUid: scan.itemUid || null, customerName: scan.customerName || null, itemName: scan.itemName || null,
       photo: photoBlob ? await blobToB64(photoBlob) : null,
-      samples: sureSamples.map((s) => ({ uid: s.uid, label: s.label, x: u8ToB64(s.x), view: u8ToB64(s.view), src: s.src, date: s.date })),
+      samples: sureSamples.map((s) => ({ uid: s.uid, label: s.label, x: u8ToB64(s.x), view: u8ToB64(s.view), src: s.src, date: s.date, style: s.style || null })),
     },
   });
 }
@@ -37,12 +38,17 @@ export async function queueScan(scan, photoBlob, sureSamples) {
 /** Put letters the sofer confirmed in the review list in the outbox. */
 export async function queueSamples(samples) {
   if (!samples.length) return;
-  await db.add('outbox', { kind: 'samples', body: { items: samples.map((s) => ({ uid: s.uid, label: s.label, x: u8ToB64(s.x), view: u8ToB64(s.view), src: s.src, scan: s.scanUid, date: s.date })) } });
+  await db.add('outbox', { kind: 'samples', body: { items: samples.map((s) => ({ uid: s.uid, label: s.label, x: u8ToB64(s.x), view: u8ToB64(s.view), src: s.src, scan: s.scanUid, date: s.date, style: s.style || null })) } });
 }
 
 /** Places the sofer marked on a letter (an empty list removes them). */
 export async function queueMarks(rec) {
   await db.add('outbox', { kind: 'marks', body: { uid: rec.uid, label: rec.label, zoom: rec.zoom ? u8ToB64(rec.zoom) : null, marks: rec.marks || [] } });
+}
+
+/** Later changes to a check: the ktav style the sofer chose, the suggested level, the sofer's answers on marked places. */
+export async function queueScanUpdate(uid, patch) {
+  await db.add('outbox', { kind: 'scanupdate', body: { uid, ...patch } });
 }
 
 /** Customers / items that were added or changed. */
@@ -119,14 +125,14 @@ async function doSync() {
         // a helper shares only letter images with the shared library – never photos, customers or results
         if (item.kind === 'scan' || item.kind === 'samples') {
           const items = item.kind === 'scan' ? item.body.samples : item.body.items;
-          const clean = (items || []).map(({ uid, label, x, view, src, date }) => ({ uid, label, x, view, src, date }));
+          const clean = (items || []).map(({ uid, label, x, view, src, date, style }) => ({ uid, label, x, view, src, date, style: style || (item.body.style ?? null) }));
           if (clean.length) await call(base, s, '/api/samples', { method: 'POST', body: JSON.stringify({ items: clean, device: s.device }), timeout: 120000 });
         }
         if (item.kind === 'marks') await call(base, s, '/api/marks', { method: 'POST', body: JSON.stringify({ ...item.body, device: s.device }), timeout: 60000 });
         await db.del('outbox', item.id);
         continue;
       }
-      const path = { scan: '/api/scans', samples: '/api/samples', records: '/api/records', marks: '/api/marks', result: `/api/scans/${item.body.uid}/result` }[item.kind];
+      const path = { scan: '/api/scans', samples: '/api/samples', records: '/api/records', marks: '/api/marks', result: `/api/scans/${item.body.uid}/result`, scanupdate: `/api/scans/${item.body.uid}/update` }[item.kind];
       await call(base, s, path, { method: 'POST', body: JSON.stringify({ ...item.body, device: s.device }), timeout: 120000 });
       await db.del('outbox', item.id);
     }

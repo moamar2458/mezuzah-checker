@@ -11,10 +11,11 @@ export const b64ToU8 = (s) => { const b = atob(s); const u = new Uint8Array(b.le
  */
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
-export async function addScanLetters(scanId, samples, scanUid = null) {
+export async function addScanLetters(scanId, samples, scanUid = null, style = null) {
   const date = Date.now();
-  const sure = samples.filter((s) => s.sure && s.label).map((s) => ({ uid: uid(), label: s.label, x: s.x, view: s.view, src: 'auto', scan: scanId, scanUid, date }));
-  const unsure = samples.filter((s) => !s.sure).map((s) => ({ guess: s.label, x: s.x, view: s.view, zoom: s.zoom || null, why: s.why, modelP: s.modelP, scan: scanId, scanUid, date }));
+  // every letter keeps the ktav style of its mezuzah, so the library keeps the four styles apart
+  const sure = samples.filter((s) => s.sure && s.label).map((s) => ({ uid: uid(), label: s.label, x: s.x, view: s.view, src: 'auto', scan: scanId, scanUid, date, style }));
+  const unsure = samples.filter((s) => !s.sure).map((s) => ({ guess: s.label, x: s.x, view: s.view, zoom: s.zoom || null, why: s.why, modelP: s.modelP, scan: scanId, scanUid, date, style, box: s.box || null }));
   await db.addMany('samples', sure);
   await db.addMany('review', unsure);
   return { sure: sure.length, unsure: unsure.length, sureSamples: sure };
@@ -24,7 +25,7 @@ export async function addScanLetters(scanId, samples, scanUid = null) {
 export async function resolveReview(item, label) {
   let sample = null;
   if (label) {
-    sample = { uid: uid(), label, x: item.x, view: item.view, src: 'confirmed', scan: item.scan, scanUid: item.scanUid, date: Date.now() };
+    sample = { uid: uid(), label, x: item.x, view: item.view, src: 'confirmed', scan: item.scan, scanUid: item.scanUid, date: Date.now(), style: item.style || null };
     await db.add('samples', sample);
     // places the sofer marked on this letter go to the spot memory, together with the letter's big view
     if (item.marks && item.marks.length) {

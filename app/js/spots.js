@@ -78,7 +78,7 @@ const NEAR = 0.16, RATIO = 0.6, MIN_ODD = 0.1;
  * Returns [{ li (letter index), mark, u, v, r, d }] – places to circle, at most `maxPerMark` for each marked problem.
  */
 export function findTaught(letters, memory, { maxPerMark = 6, maxMarks = 40 } = {}) {
-  const problems = (memory || []).filter((m) => m.kind === 'problem').slice(-maxMarks);
+  const problems = (memory || []).filter((m) => m.kind === 'problem' || m.kind === 'mehudar').slice(-maxMarks);
   const goods = (memory || []).filter((m) => m.kind === 'good');
   if (!problems.length || !letters.length) return [];
   for (const L of letters) if (!L.lv) L.lv = levels(L.zoom);
@@ -141,6 +141,19 @@ export function goodLike(L, memory, u, v, r = 0.08) {
     if (d < bestD) { best = g; bestD = d; }
   }
   if (!best) return null;
-  for (const p of memory) if (p.kind === 'problem' && diff(patch(L.zoom, L.lv, u, v, p.r), p.d, bestD) < bestD) return null;
+  for (const p of memory) if ((p.kind === 'problem' || p.kind === 'mehudar') && diff(patch(L.zoom, L.lv, u, v, p.r), p.d, bestD) < bestD) return null;
+  return best;
+}
+
+/** The saved mark of any kind (kosher / not kosher / mehudar) that looks most like this place, or null. */
+export function similarMark(L, memory, u, v, limit = 0.1) {
+  if (!memory || !memory.length) return null;
+  if (!L.lv) L.lv = levels(L.zoom);
+  let best = null, bestD = limit;
+  for (const m of memory) {
+    if (m.label && L.label && m.label !== L.label) continue;
+    const d = diff(patch(L.zoom, L.lv, u, v, m.r), m.d, bestD);
+    if (d < bestD) { best = m; bestD = d; }
+  }
   return best;
 }

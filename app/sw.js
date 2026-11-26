@@ -1,11 +1,11 @@
 // Offline support: after the first visit, every file of the app is kept on the phone.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const FILES = [
   './', 'index.html', 'train.html', 'pc.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png',
   'fonts/StamAshkenazCLM.ttf', 'fonts/StamSefaradCLM.ttf',
   'js/app.js', 'js/align.js', 'js/camera.js', 'js/crop.js', 'js/db.js', 'js/imageproc.js', 'js/library.js',
   'js/nn.js', 'js/pipeline.js', 'js/problems.js', 'js/reference.js', 'js/segment.js', 'js/synth.js',
-  'js/train-app.js', 'js/train-worker.js', 'js/worker.js', 'js/train-core.js', 'js/report.js', 'js/sync.js', 'js/pc-app.js', 'js/customers.js', 'js/compare.js', 'js/fraud.js', 'js/certificate.js', 'js/i18n.js', 'js/lang-he.js', 'js/spots.js', 'js/klaf.js',
+  'js/train-app.js', 'js/train-worker.js', 'js/worker.js', 'js/train-core.js', 'js/report.js', 'js/sync.js', 'js/pc-app.js', 'js/customers.js', 'js/compare.js', 'js/fraud.js', 'js/certificate.js', 'js/i18n.js', 'js/lang-he.js', 'js/spots.js', 'js/klaf.js', 'js/styles.js', 'js/level.js',
 ];
 
 self.addEventListener('install', (e) => {

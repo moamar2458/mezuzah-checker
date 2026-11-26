@@ -7,8 +7,9 @@ import { predict } from './nn.js';
 import { LETTERS, LETTER_INDEX, LETTER_NAMES } from './reference.js';
 import { median } from './imageproc.js';
 import { T } from './i18n.js';
-import { ZOOM, viewSquare, findTaught, goodLike } from './spots.js';
+import { ZOOM, viewSquare, findTaught, goodLike, similarMark } from './spots.js';
 import { findKlaf, warpQuad } from './klaf.js';
+import { STYLES, guessStyle, styleOutliers, styleName } from './styles.js';
 
 const name = (ch) => T(`${ch} (${LETTER_NAMES[ch]})`, ch);
 
@@ -158,6 +159,7 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
   const steps = align(letters, ref, W);
   const issues = [];
   const add = (x, y, r, note, kind, extra = {}) => issues.push({ x, y, r: Math.max(r, H * 0.6), note, kind, ...extra });
+  const LI = new Map(letters.map((g, i) => [g, i]));
   const center = (g) => [(g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2, Math.max(g.x1 - g.x0, g.y1 - g.y0) * 0.75];
 
   const lineEdits = new Map();
@@ -184,21 +186,21 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
       else if (next) { x = next.x1 + W * 0.6; y = (next.lineTop + next.lineBot) / 2; }
       else { x = w / 2; y = h / 2; }
       if (prev) bump(prev.line);
-      add(x, y, W * 0.8, T(`Missing letter? Expected ${name(ref[s.j[0]].ch)} in the word ${word(s.j[0])}`, `אות חסרה? צריכה להיות ${name(ref[s.j[0]].ch)} במילה ${word(s.j[0])}`), 'missing', { refIndex: s.j[0] });
+      add(x, y, W * 0.8, T(`Missing letter? Expected ${name(ref[s.j[0]].ch)} in the word ${word(s.j[0])}`, `אות חסרה? צריכה להיות ${name(ref[s.j[0]].ch)} במילה ${word(s.j[0])}`), 'missing', { refIndex: s.j[0], label: ref[s.j[0]].ch, px: x, py: y });
     } else if (s.op === 'I') {
       const g = letters[s.i[0]];
       const [x, y, r] = center(g);
-      add(x, y, r, g.tiny ? T('Extra small mark (ink spot?) - check', 'סימן קטן עודף (כתם דיו?) - לבדוק') : T('Extra letter or mark that is not in the text - check', 'אות או סימן עודף שאינו בנוסח - לבדוק'), 'extra');
+      add(x, y, r, g.tiny ? T('Extra small mark (ink spot?) - check', 'סימן קטן עודף (כתם דיו?) - לבדוק') : T('Extra letter or mark that is not in the text - check', 'אות או סימן עודף שאינו בנוסח - לבדוק'), 'extra', { li: s.i[0] });
     } else if (s.op === 'T') {
       const g = letters[s.i[0]];
       const [x, y, r] = center(g);
       const chs = s.j.map((j) => ref[j].ch);
       const a = chs.slice(0, -1).join(', '), b = chs[chs.length - 1];
-      add(x, y, r, T(`Letters ${a} and ${b} seem to touch or are very close (word ${word(s.j[0])}) - check`, `האותיות ${a} ו־${b} נראות נוגעות או קרובות מאוד (מילה ${word(s.j[0])}) - לבדוק`), 'touch', { refIndex: s.j[0] });
+      add(x, y, r, T(`Letters ${a} and ${b} seem to touch or are very close (word ${word(s.j[0])}) - check`, `האותיות ${a} ו־${b} נראות נוגעות או קרובות מאוד (מילה ${word(s.j[0])}) - לבדוק`), 'touch', { refIndex: s.j[0], li: s.i[0], label: chs[0], ...joinPoint(seg, g) });
     } else if (s.op === 'B') {
       const [g1, g2] = s.i.map((i) => letters[i]);
       const x = (Math.min(g1.x0, g2.x0) + Math.max(g1.x1, g2.x1)) / 2, y = (Math.min(g1.y0, g2.y0) + Math.max(g1.y1, g2.y1)) / 2;
-      add(x, y, Math.max(g1.x1, g2.x1) - Math.min(g1.x0, g2.x0), T(`Letter ${name(ref[s.j[0]].ch)} seems broken into two pieces (word ${word(s.j[0])}) - check`, `האות ${name(ref[s.j[0]].ch)} נראית שבורה לשני חלקים (מילה ${word(s.j[0])}) - לבדוק`), 'broken', { refIndex: s.j[0] });
+      add(x, y, Math.max(g1.x1, g2.x1) - Math.min(g1.x0, g2.x0), T(`Letter ${name(ref[s.j[0]].ch)} seems broken into two pieces (word ${word(s.j[0])}) - check`, `האות ${name(ref[s.j[0]].ch)} נראית שבורה לשני חלקים (מילה ${word(s.j[0])}) - לבדוק`), 'broken', { refIndex: s.j[0], li: s.i[0], label: ref[s.j[0]].ch, ...gapPoint(seg, g1.ids, g2.ids, g1, g2) });
     } else if (s.op === 'M') {
       const g = letters[s.i[0]], r = ref[s.j[0]];
       const [x, y, rr] = center(g);
@@ -208,13 +210,13 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
         const knows = (c) => !cc || cc[c] >= 30; // only judge shapes the AI has seen often in real mezuzot
         if (LETTERS[top] !== r.ch && g.probs[top] > 0.75 && g.probs[LETTER_INDEX[r.ch]] < 0.15 && knows(top) && knows(LETTER_INDEX[r.ch])) {
           g.wrong = true;
-          add(x, y, rr, T(`Looks like ${name(LETTERS[top])}, but the text has ${name(r.ch)} (word ${r.wordText}) - check`, `נראית כמו ${name(LETTERS[top])}, אבל בנוסח ${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'wrong', { refIndex: r.index });
+          add(x, y, rr, T(`Looks like ${name(LETTERS[top])}, but the text has ${name(r.ch)} (word ${r.wordText}) - check`, `נראית כמו ${name(LETTERS[top])}, אבל בנוסח ${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'wrong', { refIndex: r.index, li: s.i[0], label: r.ch });
         }
       } else if (s.score < -3) {
-        add(x, y, rr, T(`Shape looks unusual for ${name(r.ch)} (word ${r.wordText}) - check`, `צורה לא רגילה ל־${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'shape', { refIndex: r.index });
+        add(x, y, rr, T(`Shape looks unusual for ${name(r.ch)} (word ${r.wordText}) - check`, `צורה לא רגילה ל־${name(r.ch)} (מילה ${r.wordText}) - לבדוק`), 'shape', { refIndex: r.index, li: s.i[0], label: r.ch });
       }
-      if (r.wordStart && !g.wordStart && g.gapBefore !== undefined && g.gapBefore < 0.5 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Space between words looks too small before ${r.wordText} - check`, `הרווח בין המילים נראה קטן מדי לפני ${r.wordText} - לבדוק`), 'space');
-      if (!r.wordStart && g.wordStart && g.gapBefore !== undefined && g.gapBefore > 1.3 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Big space inside the word ${r.wordText} - check`, `רווח גדול בתוך המילה ${r.wordText} - לבדוק`), 'space');
+      if (r.wordStart && !g.wordStart && g.gapBefore !== undefined && g.gapBefore < 0.5 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Space between words looks too small before ${r.wordText} - check`, `הרווח בין המילים נראה קטן מדי לפני ${r.wordText} - לבדוק`), 'space', { li: s.i[0], label: r.ch, px: g.x1 + W * 0.15, py: y });
+      if (!r.wordStart && g.wordStart && g.gapBefore !== undefined && g.gapBefore > 1.3 * seg.wordGap) add(g.x1 + W * 0.15, y, W * 0.5, T(`Big space inside the word ${r.wordText} - check`, `רווח גדול בתוך המילה ${r.wordText} - לבדוק`), 'space', { li: s.i[0], label: r.ch, px: g.x1 + W * 0.15, py: y });
     }
   });
 
@@ -224,7 +226,7 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
 
   // 3. look inside the letters for cracks, white spots, thin ink, touching legs
   let lowRes = 0, inspected = 0;
-  for (const g of letters) {
+  for (const [gi, g] of letters.entries()) {
     if (g.op === 'I' && g.tiny) continue;
     const ch = g.op === 'M' ? ref[g.ref].ch : g.op === 'T' ? steps[g.step].j.map((j) => ref[j].ch).join('') : null;
     const res = inspectLetter(seg, g, ch, sens);
@@ -232,18 +234,14 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
     inspected++; if (res.strokeW < 6) lowRes++;
     for (const sp of res.spots) {
       let note = sp.note + (g.op === 'M' ? T(` (${ch}, word ${ref[g.ref].wordText})`, ` (${ch}, מילה ${ref[g.ref].wordText})`) : '');
-      if (spots && g.op === 'M') {
-        const [u, v] = toView(g, sp.x, sp.y);
-        const good = goodLike({ label: ch, zoom: g.zoom }, spots, u, v);
-        if (good) note += T(` · looks like a place you marked as good${good.note ? `: "${good.note}"` : ''}`, ` · דומה למקום שסימנת כתקין${good.note ? `: "${good.note}"` : ''}`);
-      }
-      add(sp.x, sp.y, H * 0.35, note, sp.kind);
+      const at = sp.kind === 'pieces' ? piecePoint(seg, g) : { px: sp.x, py: sp.y };
+      add(sp.x, sp.y, H * 0.35, note, sp.kind, { li: gi, label: ch ? [...ch][0] : null, ...at });
     }
   }
 
   // 3b. places that look like a problem the sofer marked before (on this letter or on another one)
   let taughtCount = 0;
-  if (spots && spots.some((m) => m.kind === 'problem')) {
+  if (spots && spots.some((m) => m.kind === 'problem' || m.kind === 'mehudar')) {
     const ms = letters.filter((g) => g.op === 'M' && g.zoom);
     const hits = findTaught(ms.map((g) => ({ label: ref[g.ref].ch, zoom: g.zoom })), spots);
     for (const hit of hits) {
@@ -251,16 +249,78 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
       g.taught = true; taughtCount++;
       const mk = hit.mark;
       const where = T(`(${r.ch}, word ${r.wordText})`, `(${r.ch}, מילה ${r.wordText})`);
+      const as = markWord(mk);
       const note = mk.note
-        ? T(`Looks like a place you marked as a problem on ${mk.label}: "${mk.note}" ${where} - check`, `דומה למקום שסימנת כבעיה באות ${mk.label}: "${mk.note}" ${where} - לבדוק`)
-        : T(`Looks like a place you marked as a problem on ${mk.label} ${where} - check`, `דומה למקום שסימנת כבעיה באות ${mk.label} ${where} - לבדוק`);
+        ? T(`Looks like a place you marked as ${as.en} on ${mk.label}: "${mk.note}" ${where} - check`, `דומה למקום שסימנת כ${as.he} באות ${mk.label}: "${mk.note}" ${where} - לבדוק`)
+        : T(`Looks like a place you marked as ${as.en} on ${mk.label} ${where} - check`, `דומה למקום שסימנת כ${as.he} באות ${mk.label} ${where} - לבדוק`);
       const x = q.left + hit.u * q.side, y = q.top + hit.v * q.side;
       // the app already circled this place: add the note to that circle instead of a second circle
-      const same = issues.find((is) => Math.hypot(is.x - x, is.y - y) < H * 0.4);
-      if (same) { same.note += T(` · looks like a place you marked as a problem${mk.note ? `: "${mk.note}"` : ''}`, ` · דומה למקום שסימנת כבעיה${mk.note ? `: "${mk.note}"` : ''}`); continue; }
-      issues.push({ x, y, r: Math.max(hit.r * q.side * 1.3, H * 0.3), note, kind: 'taught' });
+      const same = issues.find((is) => Math.hypot((is.px ?? is.x) - x, (is.py ?? is.y) - y) < H * 0.4);
+      if (same) { same.note += T(` · looks like a place you marked as ${as.en}${mk.note ? `: "${mk.note}"` : ''}`, ` · דומה למקום שסימנת כ${as.he}${mk.note ? `: "${mk.note}"` : ''}`); same.taughtNote = mk.note || ''; same.taughtKind = mk.kind; continue; }
+      issues.push({ x, y, r: Math.max(hit.r * q.side * 1.3, H * 0.3), note, kind: 'taught', li: LI.get(g), label: r.ch, px: x, py: y, taughtNote: mk.note || '', taughtKind: mk.kind });
     }
   }
+  // 3c. the ktav style, and letters whose shape is far from that style
+  const items = letters.map((g, i) => ({ g, i })).filter(({ g }) => g.op === 'M').map(({ g, i }) => ({ label: ref[g.ref].ch, x: g.x, i }));
+  const protos = opts.styleProtos || null;
+  const style = protos ? guessStyle(items, protos) : null;
+  const styleIssues = {};
+  if (protos) {
+    for (const st of STYLES) {
+      if (!protos[st.id]) continue;
+      styleIssues[st.id] = styleOutliers(items, protos, st.id).map((o) => {
+        const g = letters[o.i], r = ref[g.ref];
+        const [x, y, rr] = center(g);
+        return { x, y, r: Math.max(rr, H * 0.6), px: x, py: y, li: o.i, label: r.ch, refIndex: r.index, kind: 'style', style: st.id,
+          note: T(`The shape of ${name(r.ch)} is far from ${st.en} ktav, and from the other ${name(r.ch)} letters here (word ${r.wordText}) - check`, `צורת ה־${r.ch} רחוקה מכתב ${st.he} ומשאר ה־${r.ch} במזוזה (מילה ${r.wordText}) - לבדוק`) };
+      });
+    }
+  }
+  const useStyle = opts.style || (style && style.id) || null;
+  if (useStyle && styleIssues[useStyle]) for (const is of styleIssues[useStyle]) if (!issues.some((o) => o.li === is.li)) issues.push(is);
+
+  // 3d. a letter written with clearly different ink (darker or lighter than all the others) may have been corrected
+  const ms = letters.filter((g) => g.op === 'M' && !g.tiny && g.ink > 0.3 * A);
+  if (ms.length > 100) {
+    const ds = ms.map((g) => g.dark).sort((a, b) => a - b);
+    const med = ds[ds.length >> 1];
+    const mad = ds.map((d) => Math.abs(d - med)).sort((a, b) => a - b)[ds.length >> 1] || 1;
+    const odd = ms.filter((g) => Math.abs(g.dark - med) > Math.max(28, 6 * 1.4826 * mad)).sort((a, b) => Math.abs(b.dark - med) - Math.abs(a.dark - med)).slice(0, 3);
+    for (const g of odd) {
+      const r = ref[g.ref], [x, y, rr] = center(g);
+      if (issues.some((o) => o.li === LI.get(g))) continue;
+      add(x, y, rr, T(`The ink of ${name(r.ch)} looks different from the other letters – maybe a corrected letter (word ${r.wordText}) - check`, `הדיו של ה־${r.ch} נראה שונה משאר האותיות – אולי אות מתוקנת (מילה ${r.wordText}) - לבדוק`), 'retouch', { li: LI.get(g), label: r.ch, refIndex: r.index, px: x, py: y });
+    }
+  }
+
+  // 3e. a place the sofer answered before (kosher / not kosher / mehudar) that looks like this place: show the sofer's own words
+  const allIssues = [...issues, ...Object.values(styleIssues).flat()];
+  for (const is of allIssues) {
+    if (is.px === undefined) { is.px = is.x; is.py = is.y; }
+    is.why = is.why || WHY(is);
+    const g = is.li !== undefined && is.li !== null ? letters[is.li] : null;
+    if (spots && g && g.zoom) {
+      const [u, v] = toView(g, is.px, is.py);
+      const mk = is.taughtNote === undefined ? similarMark({ label: is.label, zoom: g.zoom }, spots, u, v) : null;
+      if (mk) {
+        const as = markWord(mk);
+        is.prevNote = mk.note || ''; is.prevKind = mk.kind;
+        is.note += T(` · looks like a place you marked as ${as.en}${mk.note ? `: "${mk.note}"` : ''}`, ` · דומה למקום שסימנת כ${as.he}${mk.note ? `: "${mk.note}"` : ''}`);
+      }
+    }
+  }
+  // the small picture of each place, for the sofer's answer (kosher / not kosher / mehudar) and the spot memory
+  const spotViews = [];
+  for (const is of allIssues) {
+    const g = is.li !== undefined && is.li !== null ? letters[is.li] : null;
+    const box = g && g.zoom ? g : { x0: is.px - H * 0.6, x1: is.px + H * 0.6, y0: is.py - H * 0.6, y1: is.py + H * 0.6 };
+    const zoom = g && g.zoom ? g.zoom : viewCrop(seg.gray, box, ZOOM);
+    const q = viewSquare(box);
+    is.sv = spotViews.length;
+    spotViews.push({ zoom, u: (is.px - q.left) / q.side, v: (is.py - q.top) / q.side, r: Math.min(0.25, Math.max(0.05, (H * 0.3) / q.side)), label: is.label || null });
+  }
+  const metrics = spacingMetrics(seg, letters, H);
+
   if (lowRes > inspected * 0.5) quality.warnings.push({ kind: 'lowres', note: T('Some strokes are too thin in the photo to check for cracks. Move closer or take the klaf in two halves.', 'חלק מהקווים דקים מדי בתמונה לבדיקת סדקים. התקרב או צלם את הקלף בשני חצאים.') });
 
   // 4. decide which letters are sure enough to teach the AI
@@ -302,7 +362,7 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
   if (matched < ref.length * 0.45) return retake('notfound', T(`Only ${matched} of ${ref.length} letters could be read. Make sure the whole klaf is in the photo, flat, sharp and well lit, and take it again.`, `רק ${matched} מתוך ${ref.length} אותיות נקראו. ודא שכל הקלף בתמונה, שטוח, חד ומואר היטב, וצלם שוב.`), { rgba: seg.rgba });
   if (issues.length > MAX_ISSUES) return retake('unclear', T(`The photo gave ${issues.length} unclear places – too many to be real. Take the photo again: klaf flat, even light, phone straight above it, and only the klaf in the frame.`, `התמונה נתנה ${issues.length} מקומות לא ברורים – יותר מדי מכדי שיהיו אמיתיים. צלם שוב: קלף שטוח, אור אחיד, טלפון ישר מעליו, ורק הקלף במסגרת.`), { rgba: seg.rgba });
   return {
-    ok: true, rgba: seg.rgba, w, h, issues, quality, samples, klaf,
+    ok: true, rgba: seg.rgba, w, h, issues, quality, samples, klaf, style, styleIssues, spotViews, metrics,
     stats: {
       found: letters.length, expected: ref.length, matched, lines: seg.lines.length,
       missing: steps.filter((s) => s.op === 'D').length, extra: steps.filter((s) => s.op === 'I').length,
@@ -317,4 +377,87 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
     })),
     letterH: H,
   };
+}
+
+
+/** Words for the kind of a place the sofer marked. */
+function markWord(mk) {
+  if (mk.kind === 'mehudar') return { en: 'a mehudar problem', he: 'בעיית הידור' };
+  if (mk.kind === 'good') return { en: 'kosher', he: 'כשר' };
+  return { en: 'not kosher', he: 'פסול' };
+}
+
+/** A few words: why this place is marked. */
+function WHY(is) {
+  const k = is.kind;
+  const w = {
+    missing: ['maybe a missing letter', 'אולי חסרה אות'],
+    extra: ['maybe an extra mark or ink spot', 'אולי סימן עודף או כתם'],
+    touch: ['maybe touching the next letter', 'אולי נוגעת באות הסמוכה'],
+    bridge: ['maybe touching a letter of the next line', 'אולי נוגעת באות בשורה הבאה'],
+    broken: ['maybe a broken letter', 'אולי אות שבורה'],
+    pieces: ['maybe a crack (letter in pieces)', 'אולי סדק (האות בחלקים)'],
+    hole: ['maybe a crack or missing ink', 'אולי סדק או חסר דיו'],
+    thin: ['maybe a crack (very thin ink)', 'אולי סדק (דיו דק מאוד)'],
+    closed: ['maybe a closed letter', 'אולי אות סגורה'],
+    leg: ['maybe the leg touches the roof', 'אולי הרגל נוגעת בגג'],
+    wrong: ['maybe a wrong letter', 'אולי אות שגויה'],
+    shape: ['unusual letter shape', 'צורת אות לא רגילה'],
+    style: ['shape not as in this ktav', 'צורה לא לפי הכתב'],
+    space: ['spacing between words', 'ריווח בין מילים'],
+    retouch: ['maybe a corrected letter', 'אולי אות מתוקנת'],
+    taught: [is.taughtKind === 'mehudar' ? 'like a mehudar problem you marked' : 'like a problem you marked', is.taughtKind === 'mehudar' ? 'דומה לבעיית הידור שסימנת' : 'דומה לבעיה שסימנת'],
+  }[k] || ['check here', 'לבדוק כאן'];
+  return T(w[0], w[1]);
+}
+
+/** Ink pixels of some components inside a box (every `step`-th pixel). */
+function inkPoints(seg, box, ids, step = 1) {
+  const set = new Set(ids), pts = [];
+  for (let y = box.y0; y <= box.y1; y += step) for (let x = box.x0; x <= box.x1; x += step) if (set.has(seg.labels[y * seg.w + x])) pts.push([x, y]);
+  return pts;
+}
+/** The middle between the two closest ink points of two groups of pieces (where a letter is broken). */
+function gapPoint(seg, idsA, idsB, boxA, boxB) {
+  const sA = Math.max(1, Math.round(Math.sqrt(((boxA.x1 - boxA.x0 + 1) * (boxA.y1 - boxA.y0 + 1)) / 900)));
+  const sB = Math.max(1, Math.round(Math.sqrt(((boxB.x1 - boxB.x0 + 1) * (boxB.y1 - boxB.y0 + 1)) / 900)));
+  const a = inkPoints(seg, boxA, idsA, sA), b = inkPoints(seg, boxB, idsB, sB);
+  let best = Infinity, p = null;
+  for (const [x1, y1] of a) for (const [x2, y2] of b) { const d = (x1 - x2) ** 2 + (y1 - y2) ** 2; if (d < best) { best = d; p = [(x1 + x2) / 2, (y1 + y2) / 2]; } }
+  return p ? { px: p[0], py: p[1] } : {};
+}
+/** Where a letter made of several pieces is split: between its biggest piece and the nearest other piece. */
+function piecePoint(seg, g) {
+  if (!g.ids || g.ids.length < 2) return { px: (g.x0 + g.x1) / 2, py: (g.y0 + g.y1) / 2 };
+  const count = new Map();
+  for (let y = g.y0; y <= g.y1; y++) for (let x = g.x0; x <= g.x1; x++) { const l = seg.labels[y * seg.w + x]; if (g.ids.includes(l)) count.set(l, (count.get(l) || 0) + 1); }
+  const main = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  return gapPoint(seg, [main], g.ids.filter((i) => i !== main), g, g);
+}
+/** Where two letters that are one blob of ink join: the narrowest column in the middle part of the blob. */
+function joinPoint(seg, g) {
+  const set = new Set(g.ids), w = g.x1 - g.x0 + 1;
+  let best = Infinity, bx = null, by = null;
+  for (let x = g.x0 + Math.round(w * 0.2); x <= g.x1 - Math.round(w * 0.2); x++) {
+    let n = 0, sy = 0;
+    for (let y = g.y0; y <= g.y1; y++) if (set.has(seg.labels[y * seg.w + x])) { n++; sy += y; }
+    if (n > 0 && n < best) { best = n; bx = x; by = sy / n; }
+  }
+  return bx === null ? {} : { px: bx, py: by };
+}
+
+/** How even the writing is: spaces between letters and words, letter heights, line distances (CV = spread / average). */
+function spacingMetrics(seg, letters, H) {
+  const cv = (a) => { if (a.length < 8) return null; const m = a.reduce((s, v) => s + v, 0) / a.length; const sd = Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length); return m > 0 ? sd / m : null; };
+  // drop the most extreme 5% (a stretched letter at the line end, a parasha break)
+  const trim = (a) => { const b = a.slice().sort((x, y) => x - y); const k = Math.floor(b.length * 0.05); return b.slice(k, b.length - k); };
+  const inWord = [], between = [];
+  for (const g of letters) {
+    if (g.op !== 'M' || g.gapBefore === undefined) continue;
+    (g.wordStart ? between : inWord).push(Math.max(0, g.gapBefore) / H);
+  }
+  const lineH = (seg.lines || []).map((L) => median(L.letters.map((g) => g.lineBot - g.lineTop)) / H);
+  const cy = (seg.lines || []).map((L) => median(L.letters.map((g) => (g.lineTop + g.lineBot) / 2)));
+  const pitch = cy.slice(1).map((v, i) => (v - cy[i]) / H);
+  return { letterGapCV: cv(trim(inWord)), wordGapCV: cv(trim(between)), lineHeightCV: cv(lineH), linePitchCV: cv(trim(pitch)) };
 }

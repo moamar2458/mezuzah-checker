@@ -127,11 +127,14 @@
     <button id="certBtn" class="big">📜 Result &amp; certificate</button>
     <div id="qualityBox"></div>
     <div id="summary" class="summary"></div>
+    <div id="levelBox" class="level-box" hidden></div>
+    <div id="styleBox" class="style-box" hidden></div>
     <div class="zoom-bar" dir="ltr">
       <button id="zoomOut">−</button><span id="zoomLbl">100%</span><button id="zoomIn">+</button>
       <label class="small"><input type="checkbox" id="showBoxes"> show found letters</label>
     </div>
     <div id="canvasWrap" class="canvas-wrap" dir="ltr"><canvas id="reportCanvas"></canvas></div>
+    <p class="small" id="answerHint" data-he="בכל מקום מסומן אפשר לענות <b>כשר</b> / <b>פסול</b> / <b>בעיית הידור</b> ולהסביר במילים שלך (בהקלדה או ב־🎤 דיבור). ההסבר נשמר עם התמונה של המקום, ובפעם הבאה שיימצא מקום דומה ההסבר שלך יוצג לידו.">On each marked place you can answer <b>kosher</b> / <b>not kosher</b> / <b>mehudar problem</b> and explain in your own words (typing or 🎤 voice). The explanation is saved with the picture of the place, and next time a similar place is found your explanation is shown next to it.</p>
     <ol id="issueList" class="issues"></ol>
     <p class="disclaimer">These are only places to check. The sofer decides.</p>
     <div class="row"><button id="retakeBtn">Retake photo</button><button class="primary" data-go="home">Done</button></div>
@@ -204,6 +207,7 @@
   <section id="library" class="screen" hidden>
     <h2>Learning library</h2>
     <div id="libCounts" class="lib-counts"></div>
+    <div id="libStyles" class="small"></div>
     <h2>The AI model</h2>
     <div id="modelInfo" class="small"></div>
     <div class="row wrap">

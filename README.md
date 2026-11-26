@@ -104,6 +104,22 @@ It has everything the phone has (customers, review, marking places, certificate�
 * "White spot inside the ink" is only marked when the spot is big enough to see, nearly as bright as the klaf, and narrower than
   the stroke (a real gap or crack). Klaf texture, light and photo noise are not marked. Numbers: `HOLE_*` in `app/js/problems.js`.
 
+## Exact place, your answers, ktav style and suggested level
+
+* **Exact place:** every mark has a thin circle around the letter, a small circle on the exact place with an arrow pointing to it,
+  and a short reason ("maybe touching the next letter", "maybe a crack or missing ink", …). Tap a mark in the list to see the reason on the photo.
+* **Your answers:** under each mark: ✓ kosher / ✗ not kosher / ★ mehudar problem, and "why?" in your own words (typing, or 🎤 Hebrew
+  speech where the browser allows it; on iPhone the keyboard microphone works too). The answer is saved with the small picture of that place
+  in the spot memory (shared through the PC). Next time a similar place is found, your answer and words are shown next to it.
+  A "kosher" answer also adds that letter to the letter library, so the letter AI trains on it.
+* **Ktav style:** Beit Yosef, Arizal, Sefaradi (Velish) or Temani. The app guesses the style from the letter shapes
+  (at first only Beit Yosef and Sefaradi, from the STaM fonts; Arizal and Temani after you have confirmed mezuzot in those styles).
+  You can correct it on the report: the letters are then checked against that style and kept under it in the library
+  (Library & AI shows the letters per style). Letters far from the style's shape, and from the other copies of the same letter, are marked.
+* **Suggested level:** needs checking / kosher / mehudar, with the reasons (marks not answered yet, your answers, spacing between letters,
+  words and lines, letter height, letters not well shaped for the ktav, a letter with different ink that may be corrected).
+  It is only a suggestion. The decision is always the sofer's.
+
 ## Teaching small details (marked places)
 In **Review unsure letters**, tap a letter, then tap its picture (🔍) to open it big.
 - Tap a place on the letter, or draw a small circle around it, and choose **⚠ Problem** or **✓ Good**; add a short note if you like.
@@ -187,6 +203,8 @@ inside touching groups, 0 missing, 10 places marked).
 ```
 pc/server.js          PC program           app/pc.html         PC screen
 app/js/klaf.js        finding the klaf in a photo and cutting it out straight
+app/js/styles.js      the four ktav styles: guessing, letter shapes per style
+app/js/level.js       the suggested level (kosher / mehudar / needs checking)
 app/js/sync.js        phone ↔ PC sync      data/               everything the PC stores
 app/index.html        phone app            app/js/segment.js   lines, letters, words
 app/train.html        AI trainer           app/js/align.js     match letters to the text
