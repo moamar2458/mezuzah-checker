@@ -72,7 +72,10 @@ export function segment(rgbaIn, w, h, opts = {}) {
 
   // drop dust and very large blobs (klaf border, table, shadows)
   const minArea = Math.max(4, 0.012 * A);
-  const comps = cc.comps.filter((c) => c.area >= minArea && c.h < 3.5 * H && c.w < 8 * W);
+  // when the klaf was cut out, nothing is written right at its edge: marks there are the edge itself, a fold or the sheet below
+  const band = opts.edgeBand ? Math.max(0.6 * H, opts.edgeBand * Math.max(w, h)) : 0;
+  const inBand = (c) => band && (c.x1 < band || c.x0 > w - 1 - band || c.y1 < band || c.y0 > h - 1 - band);
+  const comps = cc.comps.filter((c) => c.area >= minArea && c.h < 3.5 * H && c.w < 8 * W && !inBand(c));
 
   // lines: cluster body-sized components by their vertical center
   const body = comps.filter((c) => c.h > 0.7 * H && c.h < 1.35 * H).sort((a, b) => a.cy - b.cy);

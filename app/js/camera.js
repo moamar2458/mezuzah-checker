@@ -18,7 +18,7 @@ export class Camera {
   }
 
   async start(deviceId = null) {
-    const size = { width: { ideal: 4096 }, height: { ideal: 3072 } };
+    const size = { width: { ideal: 4096 }, height: { ideal: 3072 }, aspectRatio: { ideal: 4 / 3 } };
     const ask = (video) => navigator.mediaDevices.getUserMedia({ audio: false, video });
     try {
       this.stream = await ask(deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: { ideal: 'environment' }, ...size });
@@ -28,12 +28,21 @@ export class Camera {
     }
     const tr = this.stream.getVideoTracks()[0];
     this.deviceId = (tr && tr.getSettings && tr.getSettings().deviceId) || deviceId;
+    // ask for the biggest picture this camera can stream (on phones without "take photo" this is the photo)
+    try {
+      const caps = tr.getCapabilities ? tr.getCapabilities() : {};
+      const cur = tr.getSettings ? tr.getSettings() : {};
+      if (caps.width && caps.height && caps.width.max * caps.height.max > (cur.width || 0) * (cur.height || 0)) {
+        await tr.applyConstraints({ width: { ideal: caps.width.max }, height: { ideal: caps.height.max }, aspectRatio: { ideal: 4 / 3 } });
+      }
+    } catch { /* keep what the camera gave */ }
+    this.started = Date.now();
     this.video.srcObject = this.stream;
     await this.video.play();
     // iPhone asks permission for the tilt sensor
     try { if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); } catch { /* no tilt then */ }
     window.addEventListener('deviceorientation', this.onOrient);
-    this.timer = setInterval(() => this.measure(), 350);
+    this.timer = setInterval(() => this.measure(), 200); // often, so a good moment is not missed
   }
 
   stop() {
@@ -52,13 +61,13 @@ export class Camera {
   /** Find the klaf in a small copy of the live picture (like a document scanner). Returns the corners as 0..1 of the picture. */
   findKlaf() {
     const v = this.video;
-    const k = 200 / Math.max(v.videoWidth, v.videoHeight);
+    const k = 400 / Math.max(v.videoWidth, v.videoHeight);
     const sw = Math.round(v.videoWidth * k), sh = Math.round(v.videoHeight * k);
     if (!this.small) this.small = document.createElement('canvas');
     this.small.width = sw; this.small.height = sh;
     const ctx = this.small.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(v, 0, 0, sw, sh);
-    const f = findKlaf(ctx.getImageData(0, 0, sw, sh).data, sw, sh, 200);
+    const f = findKlaf(ctx.getImageData(0, 0, sw, sh).data, sw, sh, 160, 400);
     if (!f) return null;
     return { full: f.full, quad: f.quad.map(([x, y]) => [x / sw, y / sh]) };
   }
@@ -113,16 +122,31 @@ export class Camera {
     this.onStatus(status);
   }
 
-  /** Take the best photo the camera can give. Returns an ImageBitmap or canvas. */
+  /** Can this camera take a real full-size photo (like the phone's camera app), not only a video frame? */
+  canTakePhoto() { return typeof ImageCapture !== 'undefined'; }
+
+  /** Take the best photo the camera can give (full sensor size where the phone allows it). Returns an ImageBitmap or canvas. */
   async capture() {
     const track = this.stream.getVideoTracks()[0];
+    // the video frame of this very moment (used when a full photo cannot be taken, or is smaller)
+    const frame = this.frame();
     if (typeof ImageCapture !== 'undefined') {
       try {
         const ic = new ImageCapture(track);
-        const blob = await ic.takePhoto();
-        return await createImageBitmap(blob);
-      } catch { /* fall back to a video frame */ }
+        let settings = {};
+        try {
+          const pc = await ic.getPhotoCapabilities();
+          if (pc.imageWidth && pc.imageHeight) settings = { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max };
+        } catch { /* default size */ }
+        const blob = await ic.takePhoto(settings).catch(() => ic.takePhoto());
+        const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(blob));
+        if (bmp.width * bmp.height >= frame.width * frame.height) return bmp;
+      } catch { /* fall back to the video frame */ }
     }
+    return frame;
+  }
+
+  frame() {
     const c = document.createElement('canvas');
     c.width = this.video.videoWidth; c.height = this.video.videoHeight;
     c.getContext('2d').drawImage(this.video, 0, 0);

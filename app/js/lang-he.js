@@ -37,6 +37,8 @@ export const HE_APP = {
   'Lay the klaf flat, fill the frame, hold the phone straight above it.': 'הנח את הקלף שטוח, מלא את המסגרת, והחזק את הטלפון ישר מעליו.',
   'Take photo': 'צלם',
   'Choose photo': 'בחר תמונה',
+  'Phone camera (full quality)': 'מצלמת הטלפון (איכות מלאה)',
+  'Automatic photo': 'צילום אוטומטי',
   'The live camera is not available here (it needs the app to be installed or opened from https). You can still use the phone\'s own camera:': 'המצלמה החיה אינה זמינה כאן. אפשר להשתמש במצלמה של הטלפון:',
   '📷 Take photo': '📷 צלם',
   '🖼 Choose a photo': '🖼 בחר תמונה',

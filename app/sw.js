@@ -1,5 +1,5 @@
 // Offline support: after the first visit, every file of the app is kept on the phone.
-const VERSION = 'v11';
+const VERSION = 'v12';
 const FILES = [
   './', 'index.html', 'train.html', 'pc.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png',
   'fonts/StamAshkenazCLM.ttf', 'fonts/StamSefaradCLM.ttf',

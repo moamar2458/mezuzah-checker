@@ -108,9 +108,20 @@ export function analyze(rgbaIn, wIn, hIn, opts) {
 
   // too dark to see the ink well
   const paper = paperLevel(rgba);
+  // the frame sits just outside the klaf edge: paint that thin border like the klaf, so no cloth or table is checked
+  if (klaf.found) {
+    const b = Math.max(3, Math.round(Math.max(w, h) * 0.006));
+    for (let y = 0; y < h; y++) {
+      const edgeRow = y < b || y >= h - b;
+      for (let x = 0; x < w; x++) {
+        if (!edgeRow && x >= b && x < w - b) { x = w - b - 1; continue; }
+        const i = (y * w + x) * 4; rgba[i] = rgba[i + 1] = rgba[i + 2] = paper;
+      }
+    }
+  }
   if (paper < 60) return retake('dark', T('The photo is too dark. Add light (no direct flash glare on the klaf) and take it again.', 'התמונה חשוכה מדי. הוסף אור (בלי ברק ישיר של פלאש על הקלף) וצלם שוב.'));
 
-  const seg = segment(rgba, w, h);
+  const seg = segment(rgba, w, h, { edgeBand: klaf.found ? 0.02 : 0 });
   if (!seg.ok) return retake('notext', T('The klaf or its letters could not be found. Lay the klaf flat on a dark plain cloth, fill the frame with it, and take the photo again.', 'לא נמצאו הקלף או האותיות. הנח את הקלף שטוח על בד כהה וחלק, מלא איתו את המסגרת וצלם שוב.'));
   const quality = photoQuality(seg);
   quality.klaf = klaf; qbase = { blurRatio: quality.blurRatio, blurPx: quality.blurPx, blurRel: quality.blurRel, letterHeightPx: seg.H };

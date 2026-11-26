@@ -311,8 +311,37 @@ async function startCapture(mode, keepTarget = false) {
   };
   if (!Camera.supported()) { noCam(); return; }
   document.querySelector('.cam-wrap').hidden = false; document.querySelector('.cam-buttons').hidden = false;
+  shooting = false; smoothQuad = null; $('camFlash').hidden = true;
+  autoShoot = (await db.get('autoShoot')) ?? true;
+  showAuto();
   camera = new Camera($('video'), camStatus);
-  try { await camera.start(await db.get('camDevice')); fillCamPick(); } catch (err) { camera = null; noCam(); }
+  try {
+    await camera.start(await db.get('camDevice')); fillCamPick();
+    // a phone that cannot take a full photo from the live picture (iPhone): offer its own camera app for full quality too
+    $('phoneCamBtn').hidden = DESKTOP || camera.canTakePhoto();
+  } catch (err) { camera = null; noCam(); }
+}
+
+// ---------- automatic photo: the moment light, sharpness and level are all good ----------
+let autoShoot = true, shooting = false, smoothQuad = null;
+function showAuto() {
+  $('autoBtn').classList.toggle('on', autoShoot);
+  $('autoBtn').title = $('autoBtn').ariaLabel = autoShoot ? T('Automatic photo: on', 'צילום אוטומטי: פועל') : T('Automatic photo: off', 'צילום אוטומטי: כבוי');
+}
+$('autoBtn').onclick = async () => { autoShoot = !autoShoot; await db.set('autoShoot', autoShoot); showAuto(); };
+async function shoot(auto = false) {
+  if (!camera || shooting) return;
+  shooting = true;
+  $('camFlash').hidden = false;
+  $('camTip').textContent = auto ? T('📸 Taken automatically', '📸 צולם אוטומטית') : T('📸 Taking the photo…', '📸 מצלם…');
+  try {
+    const img = await camera.capture();
+    stopCamera();
+    process(img);
+  } catch (err) {
+    shooting = false; $('camFlash').hidden = true;
+    alert(T('The photo could not be taken: ', 'לא ניתן היה לצלם: ') + err.message);
+  }
 }
 
 // a PC can have more than one camera (built-in and an external USB camera): let the sofer choose, and remember it
@@ -353,8 +382,16 @@ function camStatus(s) {
     const area = Math.abs(k.quad.reduce((a, p, i) => { const q = k.quad[(i + 1) % 4]; return a + p[0] * q[1] - q[0] * p[1]; }, 0)) / 2;
     if (area < 0.3) tips.push(T('Move closer: let the klaf fill most of the frame.', 'התקרב: שהקלף ימלא את רוב המסגרת.'));
   }
-  $('camTip').textContent = tips.join(' ') || T('Looks good — take the photo.', 'נראה טוב — צלם.');
-  drawCamFrame(found ? k.quad : null);
+  if (shooting) return;
+  // steady frame: small moves of the found corners are averaged, so the frame does not shake
+  if (found) {
+    const near = smoothQuad && k.quad.every((p, i) => Math.hypot(p[0] - smoothQuad[i][0], p[1] - smoothQuad[i][1]) < 0.04);
+    smoothQuad = near ? k.quad.map((p, i) => [0.5 * p[0] + 0.5 * smoothQuad[i][0], 0.5 * p[1] + 0.5 * smoothQuad[i][1]]) : k.quad;
+  } else smoothQuad = null;
+  drawCamFrame(smoothQuad);
+  const allGood = s.light === 'ok' && s.sharp === 'ok' && s.level !== 'tilted' && !!k;
+  if (autoShoot && allGood && camera && Date.now() - camera.started > 1200) { shoot(true); return; }
+  $('camTip').textContent = tips.join(' ') || (autoShoot ? T('Looks good — taking the photo…', 'נראה טוב — מצלם…') : T('Looks good — take the photo.', 'נראה טוב — צלם.'));
 }
 function drawCamFrame(quad) {
   const cv = $('camFrame'), wrap = cv.parentElement, v = $('video');
@@ -376,16 +413,11 @@ function drawCamFrame(quad) {
 }
 let torchOn = false;
 $('torchBtn').onclick = async () => { torchOn = !torchOn; if (camera && !(await camera.torch(torchOn))) { torchOn = false; alert(T('This phone does not allow the light to be turned on from the app.', 'הטלפון הזה לא מאפשר להדליק את הפנס מהאפליקציה.')); } };
-$('shootBtn').onclick = async () => {
-  if (!camera) return;
-  const img = await camera.capture();
-  stopCamera();
-  process(img);
-};
-for (const id of ['pickFile', 'pickFile2', 'nativeCam']) {
+$('shootBtn').onclick = () => shoot(false);
+for (const id of ['pickFile', 'pickFile2', 'nativeCam', 'nativeCam3']) {
   $(id).onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
-    if (f) openFile(f, id !== 'nativeCam');
+    if (f) openFile(f, !id.startsWith('nativeCam'));
   };
 }
 

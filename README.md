@@ -91,6 +91,12 @@ It has everything the phone has (customers, review, marking places, certificate�
 
 * While the camera is open, the app looks for the klaf (like a document scanner): a green frame is drawn around the klaf only,
   everything around it is darkened, and the camera is asked to focus on the klaf.
+  The four corners come from straight lines fitted along the real edge of the parchment, so the frame is not crooked
+  and the whole klaf is inside it, also when the photo is taken at an angle.
+* **Automatic photo** (the green **A** button, on by default): the moment light, sharpness and level are all good, and a klaf is
+  found, the photo is taken by itself. The round button still takes a photo by hand.
+* Photos are taken at the best quality the phone allows: a full-size photo where the browser can take one (Android),
+  otherwise the biggest live picture the camera gives. On an iPhone the 📸 button opens the phone's own camera app for full quality.
 * After the photo (or a scan / saved file), the klaf is cut out and straightened (also when the photo was taken at an angle).
   Only the klaf is checked – cloth, case and table are never checked.
 * The photo is not checked at all, and nothing is saved, when it is too blurry, too dark, the klaf cannot be found,

@@ -7,7 +7,7 @@ function smallGray(rgba, w, h, side) {
   const sw = Math.max(8, Math.round(w * s)), sh = Math.max(8, Math.round(h * s));
   const g = new Float32Array(sw * sh);
   const fx = w / sw, fy = h / sh;
-  const step = Math.max(1, Math.floor(Math.min(fx, fy) / 3)); // a few samples per cell is enough
+  const step = Math.max(1, Math.round(Math.min(fx, fy) / 2)); // a few samples per cell are enough
   for (let y = 0; y < sh; y++) {
     const y0 = Math.floor(y * fy), y1 = Math.max(y0 + 1, Math.floor((y + 1) * fy));
     for (let x = 0; x < sw; x++) {
@@ -93,7 +93,7 @@ function order(q) {
  * Returns { quad: [[x,y] ×4] (top-left, top-right, bottom-right, bottom-left, in picture pixels), full, cover } or null.
  * full = the klaf fills the whole picture (or cannot be told apart from what is around it).
  */
-export function findKlaf(rgba, w, h, side = 240) {
+export function findKlaf(rgba, w, h, side = 240, fine = 900) {
   const sm = smallGray(rgba, w, h, side);
   const r = Math.max(2, Math.round(Math.max(sm.w, sm.h) / 80));
   const closed = filter(filter(sm, r, true), r, false); // erase thin dark letters
@@ -137,14 +137,95 @@ export function findKlaf(rgba, w, h, side = 240) {
   if (best.px.length < hullA * 0.8) return null; // not a sheet shape (a crumpled cloth, scattered light)
   const q4 = order(fourCorners(hl));
   if (polyArea(q4) < hullA * 0.9) return null;
-  // step a little inside the edge, so no cloth or table is left along the border
-  const qx = q4.reduce((s, p) => s + p[0], 0) / 4, qy = q4.reduce((s, p) => s + p[1], 0) / 4;
-  const quad = q4.map(([x, y]) => {
-    const dx = qx - x, dy = qy - y, L = Math.hypot(dx, dy) || 1;
-    const k = Math.min(1.5, L * 0.05) / L;
-    return [Math.min(w, Math.max(0, (x + dx * k) * sm.sx)), Math.min(h, Math.max(0, (y + dy * k) * sm.sy))];
-  });
-  return { quad, full: false, cover: polyArea(quad) / (w * h) };
+  const rough = q4.map(([x, y]) => [x * sm.sx, y * sm.sy]);
+  // the rough corners come from a small picture: find the real edges of the klaf on a bigger one
+  let quad = rough;
+  try { quad = refineEdges(rgba, w, h, rough, fine) || rough; } catch { /* keep the rough corners */ }
+  quad = quad.map(([x, y]) => [Math.min(w, Math.max(0, x)), Math.min(h, Math.max(0, y))]);
+  return { quad, full: false, cover: polyArea(quad) / (w * h), refined: quad !== rough };
+}
+
+let EXPAND = 0.004; // the frame is put this much (part of the picture size) outside the found edge
+export const setExpand = (v) => { EXPAND = v; };
+
+/** Bilinear value of a small grey picture at (x, y); null outside. */
+function at(img, x, y) {
+  if (x < 0 || y < 0 || x > img.w - 1.001 || y > img.h - 1.001) return null;
+  const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, i = y0 * img.w + x0, d = img.d;
+  return (d[i] * (1 - fx) + d[i + 1] * fx) * (1 - fy) + (d[i + img.w] * (1 - fx) + d[i + img.w + 1] * fx) * fy;
+}
+
+/** Straight line through points (total least squares), dropping points far from it. Returns { px, py, dx, dy } or null. */
+function fitLine(pts) {
+  let use = pts;
+  let L = null;
+  for (let it = 0; it < 3; it++) {
+    if (use.length < 6) return L;
+    let mx = 0, my = 0; for (const [x, y] of use) { mx += x; my += y; } mx /= use.length; my /= use.length;
+    let sxx = 0, syy = 0, sxy = 0; for (const [x, y] of use) { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+    const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    L = { px: mx, py: my, dx: Math.cos(ang), dy: Math.sin(ang) };
+    const res = pts.map(([x, y]) => Math.abs((x - L.px) * L.dy - (y - L.py) * L.dx));
+    const sorted = res.slice().sort((a, b) => a - b);
+    const lim = Math.max(1.2, sorted[Math.floor(sorted.length / 2)] * 2.5);
+    use = pts.filter((p, i) => res[i] <= lim);
+  }
+  return L;
+}
+function meet(a, b) {
+  const den = a.dx * b.dy - a.dy * b.dx;
+  if (Math.abs(den) < 1e-6) return null;
+  const t = ((b.px - a.px) * b.dy - (b.py - a.py) * b.dx) / den;
+  return [a.px + a.dx * t, a.py + a.dy * t];
+}
+
+/**
+ * The real edge of the klaf near each rough side: walking across the side, the place where the (letter-free) picture
+ * drops most from klaf to background. A straight line is fitted through those places on each side,
+ * and the corners are where the lines meet – so a crooked or bumpy outline still gives the true four corners.
+ */
+function refineEdges(rgba, w, h, rough, fineSide) {
+  const fm = smallGray(rgba, w, h, Math.min(Math.max(w, h), fineSide));
+  const r = Math.max(2, Math.round(Math.max(fm.w, fm.h) / 150));
+  const cl = filter(filter(fm, r, true), r, false); // letters erased, the klaf edge kept
+  const q = rough.map(([x, y]) => [x / fm.sx, y / fm.sy]);
+  const cx = q.reduce((s, p) => s + p[0], 0) / 4, cy = q.reduce((s, p) => s + p[1], 0) / 4;
+  const R = Math.max(6, 0.05 * Math.max(fm.w, fm.h));
+  const lines = [];
+  for (let i = 0; i < 4; i++) {
+    const A = q[i], B = q[(i + 1) % 4];
+    const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    let nx = -(B[1] - A[1]) / len, ny = (B[0] - A[0]) / len;
+    const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+    if ((mx - cx) * nx + (my - cy) * ny < 0) { nx = -nx; ny = -ny; } // point outwards
+    const pts = [];
+    const N = 60;
+    for (let k = 0; k < N; k++) {
+      const t = 0.08 + (0.84 * k) / (N - 1);
+      const px = A[0] + (B[0] - A[0]) * t, py = A[1] + (B[1] - A[1]) * t;
+      let best = 0, bestS = null;
+      for (let s = -R; s <= R; s += 0.5) {
+        const inn = at(cl, px + nx * (s - 2), py + ny * (s - 2)), out = at(cl, px + nx * (s + 2), py + ny * (s + 2));
+        if (inn === null || out === null) continue;
+        const drop = inn - out;
+        if (drop > best) { best = drop; bestS = s; }
+      }
+      if (bestS !== null && best >= 14) pts.push([px + nx * bestS, py + ny * bestS]);
+    }
+    // a side that runs along the picture border (klaf cut off by the photo) keeps its rough line
+    lines.push(pts.length >= 15 ? fitLine(pts) : null);
+    if (!lines[i]) lines[i] = { px: A[0], py: A[1], dx: (B[0] - A[0]) / len, dy: (B[1] - A[1]) / len };
+  }
+  const corners = [];
+  for (let i = 0; i < 4; i++) { const c = meet(lines[(i + 3) % 4], lines[i]); if (!c) return null; corners.push(c); }
+  // a little outside the edge, so the whole klaf is in the frame
+  const ex = corners.map(([x, y]) => { const dx = x - cx, dy = y - cy, L = Math.hypot(dx, dy) || 1; const k = (EXPAND * Math.max(fm.w, fm.h)) / L; return [(x + dx * k) * fm.sx, (y + dy * k) * fm.sy]; });
+  // sanity: the refined shape must stay close to the rough one
+  const a0 = polyArea(rough), a1 = polyArea(ex), diag = Math.hypot(w, h);
+  if (a1 < a0 * 0.8 || a1 > a0 * 1.35) return null;
+  if (ex.some((p, i) => Math.hypot(p[0] - rough[i][0], p[1] - rough[i][1]) > 0.08 * diag)) return null;
+  if (cross(ex[0], ex[1], ex[2]) <= 0 || cross(ex[1], ex[2], ex[3]) <= 0 || cross(ex[2], ex[3], ex[0]) <= 0 || cross(ex[3], ex[0], ex[1]) <= 0) return null;
+  return ex;
 }
 
 /** The perspective map from the output rectangle (ow × oh) to the quad in the picture. */

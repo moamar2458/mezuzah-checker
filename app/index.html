@@ -84,6 +84,7 @@
         <span id="stLevel" class="chip">Level</span>
         <span id="stKlaf" class="chip" data-he="קלף ?">Klaf ?</span>
       </div>
+      <div id="camFlash" class="cam-flash" hidden></div>
       <div id="camTip" class="cam-tip">Lay the klaf flat, fill the frame, hold the phone straight above it.</div>
     </div>
     <div class="cam-buttons">
@@ -91,6 +92,8 @@
       <button id="shootBtn" class="shoot" aria-label="Take photo"></button>
       <label class="round" aria-label="Choose photo" title="Choose photo">🖼<input id="pickFile" type="file" accept="image/*,application/pdf,.pdf" hidden></label>
       <button id="scanBtn" class="round" hidden aria-label="Scanner" title="Scanner">🖨</button>
+      <label id="phoneCamBtn" class="round" hidden aria-label="Phone camera (full quality)" title="Phone camera (full quality)">📸<input id="nativeCam3" type="file" accept="image/*" capture="environment" hidden></label>
+      <button id="autoBtn" class="round auto-btn on" aria-label="Automatic photo" title="Automatic photo">A</button>
     </div>
     <div id="noCam" class="note" hidden>
       <span id="noCamMsg">The live camera is not available here (it needs the app to be installed or opened from https).
